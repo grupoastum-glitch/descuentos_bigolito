@@ -1,0 +1,46 @@
+/* ---------------------------------------------------------------
+   Estilos propios. Todo lo demás lo resuelve Tailwind desde el CDN.
+   La paleta de marca se configura en el bloque tailwind.config
+   de index.html, no aquí.
+   --------------------------------------------------------------- */
+
+body {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  /* El scroll lo maneja #main-content, no el body: eso es lo que da
+     la sensación de aplicación y no de página web. */
+  overflow: hidden;
+}
+
+/* Ocultar la barra de scroll sin perder el scroll */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Respetar la barra de gestos de iOS bajo el nav inferior */
+.safe-bottom {
+  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* Recorte de texto a N líneas en las tarjetas de oferta */
+.linea-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Entrada suave de las tarjetas al renderizarse */
+@keyframes aparecer {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.aparecer {
+  animation: aparecer 0.35s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aparecer { animation: none; }
+  * { transition-duration: 0.01ms !important; }
+}

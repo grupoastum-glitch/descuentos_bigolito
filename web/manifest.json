@@ -1,0 +1,32 @@
+{
+  "name": "Descuentos Bigolito | Ofertas y descuentos",
+  "short_name": "Bigolito",
+  "description": "Los mejores descuentos y cupones del día, junto a nuestros canales de Telegram.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0B0B0E",
+  "theme_color": "#0B0B0E",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "./images/icono-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./images/icono-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./images/icono-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

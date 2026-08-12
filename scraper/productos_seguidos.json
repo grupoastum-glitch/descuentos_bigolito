@@ -1,0 +1,9 @@
+{
+  "productos": [
+    {
+      "url": "https://www.falabella.com/falabella-cl/product/000000/producto-de-ejemplo",
+      "nombre_referencia": "Ejemplo — reemplazar por un producto real o borrar esta entrada",
+      "activo": false
+    }
+  ]
+}

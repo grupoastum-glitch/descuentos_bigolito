@@ -1,0 +1,17 @@
+# Este repo solo versiona web/, bot/ y scraper/. Todo lo demás en esta carpeta
+# (capturas de referencia, notas) se queda solo en disco, nunca se sube.
+/*
+!/web/
+!/bot/
+!/scraper/
+!/.gitignore
+
+# Redundante con bot/.gitignore y scraper/.gitignore, pero explícito acá también:
+# los tokens nunca se versionan.
+bot/.env
+bot/.venv/
+bot/**/__pycache__/
+scraper/.env
+scraper/.venv/
+scraper/**/__pycache__/
+*.pyc

@@ -1,0 +1,48 @@
+{
+  "marca": {
+    "nombre": "Descuentos Bigolito",
+    "emoji": "🐶",
+    "saludo": "Hola! 👋",
+    "titulo": "¡Bienvenido!",
+    "descripcion": "Únete a nuestra comunidad. Descubre las ofertas antes que tú."
+  },
+  "canales": [
+    {
+      "nombre": "Canal de Chat",
+      "url": "https://t.me/ejemplo_descuentos_chat",
+      "descripcion": "Conversa con la comunidad",
+      "tipo": "comunidad"
+    },
+    {
+      "nombre": "Descuentos Bigolito",
+      "url": "https://t.me/descuentos_bigolito",
+      "descripcion": "Los mejores descuentos del día",
+      "tipo": "oferta"
+    },
+    {
+      "nombre": "Canal de ventas",
+      "url": "https://t.me/tu_canal_ventas",
+      "descripcion": "Compra y venta entre miembros",
+      "tipo": "comunidad"
+    }
+  ],
+  "vip": {
+    "nombre": "Acceso VIP",
+    "url": "https://t.me/ejemplo_descuentos_vip",
+    "icono": "crown"
+  },
+  "redes": [
+    { "nombre": "Instagram", "url": "https://instagram.com/tu_cuenta", "icono": "camera" },
+    { "nombre": "TikTok", "url": "https://tiktok.com/@tu_cuenta", "icono": "music-2" },
+    { "nombre": "Bot de Telegram", "url": "https://t.me/descuentos_bigolito_cl_bot", "icono": "send" }
+  ],
+  "contacto": {
+    "nombre": "Soporte",
+    "url": "https://t.me/nicolass94588"
+  },
+  "bot": {
+    "descripcion_larga": "¡Hola! 👋 Soy el bot de Descuentos Bigolito 🐶, tu acceso directo a los mejores descuentos, cupones y ofertas del día. Descubre las ofertas antes que tú.\n\nDesde aquí puedes:\n📢 Unirte a nuestros canales de ofertas\n👑 Conocer el acceso VIP\n\nEscribe /start para ver el menú completo.",
+    "descripcion_corta": "Bot oficial de Descuentos Bigolito 🐶 — descubre las ofertas antes que tú.",
+    "comandos": []
+  }
+}
