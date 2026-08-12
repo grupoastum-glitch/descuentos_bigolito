@@ -61,9 +61,11 @@ def teclado_inicio(config: dict) -> InlineKeyboardMarkup | None:
 
     filas = [[InlineKeyboardButton(c["nombre"], url=c["url"])] for c in ofertas if c.get("url")]
     if vip and vip.get("url"):
-        filas.append([InlineKeyboardButton(vip["nombre"], url=vip["url"])])
+        # la web ya tiene un ícono de corona aparte del texto (ver web/js/render.js botonVip);
+        # el bot no tiene ese ícono, así que acá se agrega el emoji al nombre al armar el botón.
+        filas.append([InlineKeyboardButton(f"{vip['nombre']} 👑", url=vip["url"])])
     if contacto and contacto.get("url"):
-        filas.append([InlineKeyboardButton("🆘 Ayuda", url=contacto["url"])])
+        filas.append([InlineKeyboardButton("Háblame 💬", url=contacto["url"])])
     filas.append([InlineKeyboardButton("ℹ️ Información", callback_data="informacion")])
     return InlineKeyboardMarkup(filas) if filas else None
 
