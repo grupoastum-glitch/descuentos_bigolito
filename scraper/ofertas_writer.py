@@ -11,7 +11,9 @@ Telegram cuando es un récord real —
   una oferta buena quede "enterrada" para suscriptores nuevos.
 
 `historial` guarda un evento por cada publicación real (no cada scrape), usado para derivar el
-mínimo histórico y el descuento máximo. Máximo una publicación por producto por día calendario.
+mínimo histórico y el descuento máximo. Sin tope de publicaciones por día — un producto puede
+volver a postearse el mismo día si vuelve a cumplir alguna de las Reglas 1/2/3 (ej. Regla 3 cada
+HORAS_REPUBLICACION_REGLA3, varias veces en un mismo día).
 
 El evento de historial de la corrida actual NO se persiste dentro de procesar() — recién se
 aplica en confirmar_publicaciones(), después de que telegram_publisher confirma cuáles ofertas
@@ -80,7 +82,7 @@ def _horas_entre(fecha_iso_desde: str, fecha_iso_hasta: str) -> float:
 
 def _evaluar_reglas(historial: list[dict], precio_actual: int, descuento_pct: int, ahora: str) -> DecisionPublicacion:
     """Función pura: decide si el estado actual amerita publicar, y por qué regla.
-    No conoce Telegram ni el dedup por día calendario (ver _ya_publicado_hoy)."""
+    No conoce Telegram."""
     stats = _stats_historial(historial)
     ultimo = historial[-1]
     es_evento_nuevo = precio_actual != ultimo["precio"] or descuento_pct != ultimo["descuento_pct"]
@@ -107,12 +109,6 @@ def _evaluar_reglas(historial: list[dict], precio_actual: int, descuento_pct: in
         )
 
     return DecisionPublicacion()
-
-
-def _ya_publicado_hoy(historial: list[dict], ahora: str) -> bool:
-    # todas las fechas del sistema son UTC vía _ahora_iso() con el mismo formato fijo —
-    # comparar el substring de fecha (los primeros 10 caracteres) es seguro, sin parsear.
-    return bool(historial) and historial[-1]["fecha"][:10] == ahora[:10]
 
 
 def procesar(repo_dir: Path, items_detectados: list[dict], tienda: config.Tienda) -> list[dict]:
@@ -163,7 +159,7 @@ def procesar(repo_dir: Path, items_detectados: list[dict], tienda: config.Tienda
             # producto 100% nuevo: su primer precio ya "es" su mínimo histórico.
             decision = DecisionPublicacion(regla="regla_1")
 
-        es_candidata = decision.regla is not None and not _ya_publicado_hoy(historial, ahora)
+        es_candidata = decision.regla is not None
 
         # el evento de esta corrida NO se persiste todavía (ver docstring del módulo) — solo
         # se arma en memoria para mostrarlo en el caption si es_candidata, y se guarda si/cuando
