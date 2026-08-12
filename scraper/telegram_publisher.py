@@ -163,7 +163,7 @@ async def publicar_ofertas_nuevas(ofertas: list[dict]) -> set[str]:
         return ids_confirmados
 
     bot = Bot(token=config.TELEGRAM_BOT_TOKEN)
-    ultimo_posteo_por_canal: dict[str, float] = {}
+    ultimo_posteo: float | None = None
     async with bot:
         for oferta in ofertas:
             username = config.CANAL_TELEGRAM_USERNAME.get(oferta.get("canal"))
@@ -173,10 +173,8 @@ async def publicar_ofertas_nuevas(ofertas: list[dict]) -> set[str]:
                 continue
             chat_id = f"@{username}"
 
-            # el límite de flood control de Telegram es por chat, no global del bot — dos
-            # posteos seguidos a canales distintos no compiten por el mismo límite. Solo se
-            # espera si el posteo anterior fue a este mismo canal.
-            ultimo_posteo = ultimo_posteo_por_canal.get(chat_id)
+            # espaciado global entre posteos, sin importar el canal — con dos canales activos
+            # ya no vale la pena coordinar el límite de flood control (por chat) por separado.
             if ultimo_posteo is not None:
                 espera = config.TELEGRAM_DELAY_SEGUNDOS - (time.monotonic() - ultimo_posteo)
                 if espera > 0:
@@ -195,5 +193,5 @@ async def publicar_ofertas_nuevas(ofertas: list[dict]) -> set[str]:
                     )
             except TelegramError:
                 log.exception("Falló el posteo a %s para la oferta %s", chat_id, oferta["id"])
-            ultimo_posteo_por_canal[chat_id] = time.monotonic()
+            ultimo_posteo = time.monotonic()
     return ids_confirmados

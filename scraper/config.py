@@ -50,10 +50,12 @@ TIERS_DESCUENTO = [
     (40, "ofertas_40"),
 ]
 
-# cada cuántos días se le da otra chance a un producto que sigue siendo récord (precio mínimo o
+# cada cuántas horas se le da otra chance a un producto que sigue siendo récord (precio mínimo o
 # mayor descuento) pero no cambió desde la última vez que se publicó — evita que ofertas buenas
-# queden "enterradas" para suscriptores nuevos, sin spamear todos los días.
-DIAS_REPUBLICACION_REGLA3 = 30
+# queden "enterradas" para suscriptores nuevos. El tope de una publicación por día calendario
+# (ver _ya_publicado_hoy en ofertas_writer.py) sigue aplicando aparte, así que aunque esto dispare
+# cada 6h, en la práctica un producto no se republica más de una vez por día.
+HORAS_REPUBLICACION_REGLA3 = 6
 
 # @username de Telegram por canal (el bot debe ser admin ahí con permiso "Publicar mensajes").
 # Sus claves son, a la vez, los únicos canales que reciben posteo automático — sumar/sacar una

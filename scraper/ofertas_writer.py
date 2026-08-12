@@ -6,7 +6,7 @@ Telegram cuando es un récord real —
 
 - Regla 1: el precio actual es el más bajo jamás registrado para ese producto.
 - Regla 2: el % de descuento es el más alto visto, aunque el precio no sea el mínimo histórico.
-- Regla 3: pasaron DIAS_REPUBLICACION_REGLA3 días desde la última publicación y el producto
+- Regla 3: pasaron HORAS_REPUBLICACION_REGLA3 horas desde la última publicación y el producto
   sigue siendo récord (de precio o de descuento) sin haber cambiado desde entonces — evita que
   una oferta buena quede "enterrada" para suscriptores nuevos.
 
@@ -72,10 +72,10 @@ class DecisionPublicacion:
     fecha_precio_minimo_anterior: str | None = None
 
 
-def _dias_entre(fecha_iso_desde: str, fecha_iso_hasta: str) -> int:
+def _horas_entre(fecha_iso_desde: str, fecha_iso_hasta: str) -> float:
     desde = datetime.strptime(fecha_iso_desde, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     hasta = datetime.strptime(fecha_iso_hasta, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-    return (hasta - desde).days
+    return (hasta - desde).total_seconds() / 3600
 
 
 def _evaluar_reglas(historial: list[dict], precio_actual: int, descuento_pct: int, ahora: str) -> DecisionPublicacion:
@@ -97,7 +97,7 @@ def _evaluar_reglas(historial: list[dict], precio_actual: int, descuento_pct: in
         )
 
     sigue_siendo_record = es_minimo_historico or es_descuento_max
-    if sigue_siendo_record and _dias_entre(ultimo["fecha"], ahora) >= config.DIAS_REPUBLICACION_REGLA3:
+    if sigue_siendo_record and _horas_entre(ultimo["fecha"], ahora) >= config.HORAS_REPUBLICACION_REGLA3:
         if es_minimo_historico:
             return DecisionPublicacion(regla="regla_3")
         return DecisionPublicacion(
