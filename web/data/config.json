@@ -18,17 +18,11 @@
       "url": "https://t.me/descuentos_bigolito",
       "descripcion": "Los mejores descuentos del día",
       "tipo": "oferta"
-    },
-    {
-      "nombre": "Canal de ventas",
-      "url": "https://t.me/tu_canal_ventas",
-      "descripcion": "Compra y venta entre miembros",
-      "tipo": "comunidad"
     }
   ],
   "vip": {
     "nombre": "Super Descuentos Bigolito 👑",
-    "url": "https://t.me/ejemplo_descuentos_vip",
+    "url": "https://t.me/super_descuentos_bigolito",
     "icono": "crown"
   },
   "redes": [
