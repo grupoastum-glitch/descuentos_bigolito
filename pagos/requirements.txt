@@ -1,0 +1,6 @@
+fastapi==0.141.1
+uvicorn==0.52.1
+mercadopago==3.5.0
+python-telegram-bot==21.6
+asyncpg==0.30.0
+python-dotenv==1.0.1

@@ -11,6 +11,7 @@ import logging
 import os
 from pathlib import Path
 
+import mercadopago
 from dotenv import load_dotenv
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import Conflict
@@ -24,6 +25,11 @@ from telegram.ext import (
 )
 
 RUTA_CONFIG = Path(__file__).resolve().parent.parent / "web" / "data" / "config.json"
+
+CANAL_ID_VIP = "vip"  # ver pagos/config.py::CANAL_CHAT_ID — mismo id en ambos lados
+# mismo back_url usado al crear el Preapproval Plan (ver PLAN_canal_vip_mercadopago.md) — a dónde
+# vuelve el usuario después de autorizar el pago en MercadoPago.
+BACK_URL_MERCADOPAGO = "https://t.me/descuentos_bigolito_cl_bot"
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -60,10 +66,12 @@ def teclado_inicio(config: dict) -> InlineKeyboardMarkup | None:
     contacto = config.get("contacto")
 
     filas = [[InlineKeyboardButton(c["nombre"], url=c["url"])] for c in ofertas if c.get("url")]
-    if vip and vip.get("url"):
-        # la web ya tiene un ícono de corona aparte del texto (ver web/js/render.js botonVip);
-        # el bot no tiene ese ícono, así que acá se agrega el emoji al nombre al armar el botón.
-        filas.append([InlineKeyboardButton(f"{vip['nombre']} 👑", url=vip["url"])])
+    if vip:
+        # el canal VIP es privado y pago (ver PLAN_canal_vip_mercadopago.md) — el botón dispara
+        # el flujo de suscripción (pide email, genera el link de pago de MercadoPago) en vez de
+        # linkear directo al canal como antes. La web sigue usando vip["url"] para su propio
+        # botón — ese lado queda pendiente aparte, no lo toca este cambio.
+        filas.append([InlineKeyboardButton(f"{vip['nombre']} 👑", callback_data="suscribirme_vip")])
     if contacto and contacto.get("url"):
         filas.append([InlineKeyboardButton("Háblame 💬", url=contacto["url"])])
     filas.append([InlineKeyboardButton("ℹ️ Información", callback_data="informacion")])
@@ -95,7 +103,52 @@ async def cb_informacion(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     await query.message.reply_text(texto_informacion(config), parse_mode="Markdown")
 
 
-async def mensaje_no_reconocido(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+async def cb_suscribirme_vip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Primer paso del flujo de suscripción: MercadoPago exige el email del pagador para crear
+    la preapproval (no alcanza con el user_id de Telegram) — se lo pedimos acá y se procesa en
+    el próximo mensaje de texto (ver mensaje_no_reconocido, que revisa este estado primero)."""
+    query = update.callback_query
+    await query.answer()
+    context.user_data["esperando_email_vip"] = True
+    await query.message.reply_text(
+        "Para suscribirte al canal VIP necesito tu email (MercadoPago lo pide para el cobro).\n"
+        "Escribilo en tu próximo mensaje:"
+    )
+
+
+async def _procesar_email_vip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    email = (update.message.text or "").strip()
+    if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
+        await update.message.reply_text("Ese no parece un email válido. Escribilo de nuevo:")
+        return
+    context.user_data["esperando_email_vip"] = False
+
+    telegram_user_id = update.effective_user.id
+    try:
+        resultado = context.bot_data["mp_sdk"].preapproval().create({
+            "preapproval_plan_id": context.bot_data["mp_plan_id"],
+            "payer_email": email,
+            "external_reference": f"{telegram_user_id}:{CANAL_ID_VIP}",
+            "back_url": BACK_URL_MERCADOPAGO,
+        })
+        resultado.raise_for_status()
+    except Exception:
+        log.exception("Falló la creación de preapproval para %s", telegram_user_id)
+        await update.message.reply_text(
+            "Hubo un problema generando el link de pago. Probá de nuevo más tarde."
+        )
+        return
+
+    init_point = resultado["response"]["init_point"]
+    await update.message.reply_text(
+        "Listo, completá el pago acá para activar tu suscripción VIP:\n" + init_point
+    )
+
+
+async def mensaje_no_reconocido(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.user_data.get("esperando_email_vip"):
+        await _procesar_email_vip(update, context)
+        return
     await update.message.reply_text("No entendí ese mensaje 🤔 Usa /start para ver el menú.")
 
 
@@ -145,10 +198,20 @@ def main() -> None:
     if not token:
         raise SystemExit("Falta TELEGRAM_BOT_TOKEN en bot/.env")
 
+    mp_access_token = os.environ.get("MERCADOPAGO_ACCESS_TOKEN")
+    mp_plan_id = os.environ.get("MERCADOPAGO_PREAPPROVAL_PLAN_ID")
+    if not mp_access_token or not mp_plan_id:
+        raise SystemExit(
+            "Falta MERCADOPAGO_ACCESS_TOKEN o MERCADOPAGO_PREAPPROVAL_PLAN_ID en bot/.env"
+        )
+
     app = Application.builder().token(token).post_init(sincronizar_perfil).build()
+    app.bot_data["mp_sdk"] = mercadopago.SDK(mp_access_token)
+    app.bot_data["mp_plan_id"] = mp_plan_id
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(cb_informacion, pattern="^informacion$"))
+    app.add_handler(CallbackQueryHandler(cb_suscribirme_vip, pattern="^suscribirme_vip$"))
     app.add_handler(MessageHandler(filters.COMMAND | filters.TEXT, mensaje_no_reconocido))
     app.add_error_handler(manejar_error)
 

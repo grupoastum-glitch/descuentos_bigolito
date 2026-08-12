@@ -1,0 +1,19 @@
+# Cron diario: reconfirma el estado de las suscripciones activas contra MercadoPago. Ver
+# Dockerfile.webhook para el servicio siempre activo (mismo código, distinto entrypoint).
+FROM python:3.11-slim
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+COPY pagos/requirements.txt pagos/requirements.txt
+RUN pip install --no-cache-dir -r pagos/requirements.txt
+
+COPY pagos/config.py pagos/config.py
+COPY pagos/db.py pagos/db.py
+COPY pagos/logica.py pagos/logica.py
+COPY pagos/mercadopago_client.py pagos/mercadopago_client.py
+COPY pagos/telegram_client.py pagos/telegram_client.py
+COPY pagos/reconciliacion.py pagos/reconciliacion.py
+
+WORKDIR /app/pagos
+CMD ["python", "reconciliacion.py"]

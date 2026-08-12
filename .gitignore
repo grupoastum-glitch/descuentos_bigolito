@@ -1,17 +1,21 @@
-# Este repo solo versiona web/, bot/ y scraper/. Todo lo demás en esta carpeta
-# (capturas de referencia, notas) se queda solo en disco, nunca se sube.
+# Este repo solo versiona web/, bot/, scraper/ y pagos/. Todo lo demás en esta carpeta
+# (capturas de referencia, notas, PLAN_*.md) se queda solo en disco, nunca se sube.
 /*
 !/web/
 !/bot/
 !/scraper/
+!/pagos/
 !/.gitignore
 
-# Redundante con bot/.gitignore y scraper/.gitignore, pero explícito acá también:
-# los tokens nunca se versionan.
+# Redundante con bot/.gitignore, scraper/.gitignore y pagos/.gitignore, pero explícito acá
+# también: los tokens nunca se versionan.
 bot/.env
 bot/.venv/
 bot/**/__pycache__/
 scraper/.env
 scraper/.venv/
 scraper/**/__pycache__/
+pagos/.env
+pagos/.venv/
+pagos/**/__pycache__/
 *.pyc
