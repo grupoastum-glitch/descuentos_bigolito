@@ -1,4 +1,109 @@
 {
-  "actualizado": null,
-  "ofertas": []
+  "actualizado": "2026-08-12T20:31:32Z",
+  "ofertas": [
+    {
+      "id": "paris_719791999",
+      "titulo": "Velador Curvo 2 Cajones",
+      "descuento": "70%",
+      "comercio": "Paris",
+      "categoria": null,
+      "cupon": null,
+      "detalle": null,
+      "url": "https://www.paris.cl/velador-curvo-2-cajones-719791999.html",
+      "imagen": "https://cl-dam-resizer.ecomm.cencosud.com/unsafe/adaptive-fit-in/792x1068/cl/paris/719791999/variant/680a394d6e546dde9448edea/images/2a3ecb4f-a365-467b-9d06-62d535b6f74c/719791999-0000-001.jpg",
+      "fecha": "2026-08-12T20:18:07Z",
+      "canal": "ofertas_vip"
+    },
+    {
+      "id": "paris_271064999",
+      "titulo": "Respaldo de Cama Lino Wabi Sabi King",
+      "descuento": "65%",
+      "comercio": "Paris",
+      "categoria": null,
+      "cupon": null,
+      "detalle": null,
+      "url": "https://www.paris.cl/respaldo-de-cama-lino-wabi-sabi-king-271064999.html",
+      "imagen": "https://cl-dam-resizer.ecomm.cencosud.com/unsafe/adaptive-fit-in/792x1068/paris/271064999/variant/images/2ad25567-05d6-4075-ab95-eaccefa5437b/271064999-0000-009.jpg",
+      "fecha": "2026-08-12T20:18:07Z",
+      "canal": "ofertas_vip"
+    },
+    {
+      "id": "paris_137183999",
+      "titulo": "Velador Ignacia 2 Cajones",
+      "descuento": "70%",
+      "comercio": "Paris",
+      "categoria": null,
+      "cupon": null,
+      "detalle": null,
+      "url": "https://www.paris.cl/velador-ignacia-2-cajones-137183999.html",
+      "imagen": "https://cl-dam-resizer.ecomm.cencosud.com/unsafe/adaptive-fit-in/792x1068/paris/137183999/variant/images/85ea86a7-06aa-4d58-8eb5-38885a2e7b9e/137183999-0000-001.jpg",
+      "fecha": "2026-08-12T20:18:07Z",
+      "canal": "ofertas_vip"
+    },
+    {
+      "id": "paris_975220",
+      "titulo": "Respaldos de Cama Capitone Lucia King",
+      "descuento": "73%",
+      "comercio": "Paris",
+      "categoria": null,
+      "cupon": null,
+      "detalle": null,
+      "url": "https://www.paris.cl/respaldos-de-cama-capitone-lucia-king-975220.html",
+      "imagen": "https://cl-dam-resizer.ecomm.cencosud.com/unsafe/adaptive-fit-in/792x1068/cl/paris/975220/variant/68b76428547e961e7a4c3c4b/images/efa5db47-6bac-4d29-bb1c-c20251f96263/975220-0270-012.jpg",
+      "fecha": "2026-08-12T20:18:07Z",
+      "canal": "ofertas_vip"
+    },
+    {
+      "id": "paris_975219",
+      "titulo": "Respaldos de Cama Capitone Lucia 2 Plazas",
+      "descuento": "73%",
+      "comercio": "Paris",
+      "categoria": null,
+      "cupon": null,
+      "detalle": null,
+      "url": "https://www.paris.cl/respaldos-de-cama-capitone-lucia-2-plazas-975219.html",
+      "imagen": "https://cl-dam-resizer.ecomm.cencosud.com/unsafe/adaptive-fit-in/792x1068/cl/paris/975219/variant/68a634f19aad21023dcb366b/images/70583716-8127-4a4d-b0a7-7111d3974d6b/975219-0270-012.jpg",
+      "fecha": "2026-08-12T20:18:07Z",
+      "canal": "ofertas_vip"
+    },
+    {
+      "id": "paris_271062999",
+      "titulo": "Respaldo de Cama Lino Wabi Sabi 2 Plazas",
+      "descuento": "65%",
+      "comercio": "Paris",
+      "categoria": null,
+      "cupon": null,
+      "detalle": null,
+      "url": "https://www.paris.cl/respaldo-de-cama-lino-wabi-sabi-2-plazas-271062999.html",
+      "imagen": "https://cl-dam-resizer.ecomm.cencosud.com/unsafe/adaptive-fit-in/792x1068/cl/paris/271062999/variant/69c4366206bd2973806574ff/images/fdfbb4e5-91ae-4d9f-9c27-6ca56e464b24/271062999-0000-009.jpg",
+      "fecha": "2026-08-12T20:18:07Z",
+      "canal": "ofertas_vip"
+    },
+    {
+      "id": "paris_137214999",
+      "titulo": "Cómoda Ignacia 6 Cajones",
+      "descuento": "71%",
+      "comercio": "Paris",
+      "categoria": null,
+      "cupon": null,
+      "detalle": null,
+      "url": "https://www.paris.cl/comoda-ignacia-6-cajones-137214999.html",
+      "imagen": "https://cl-dam-resizer.ecomm.cencosud.com/unsafe/adaptive-fit-in/792x1068/paris/137214999/variant/images/c8894146-da76-4123-8fbd-95a8072b3053/137214999-0000-001.jpg",
+      "fecha": "2026-08-12T20:18:07Z",
+      "canal": "ofertas_vip"
+    },
+    {
+      "id": "paris_996696999",
+      "titulo": "Jeep a Control Remoto 1:12 Camuflaje",
+      "descuento": "60%",
+      "comercio": "Paris",
+      "categoria": null,
+      "cupon": null,
+      "detalle": null,
+      "url": "https://www.paris.cl/jeep-a-control-remoto-112-camuflaje-996696999.html",
+      "imagen": "https://cl-dam-resizer.ecomm.cencosud.com/unsafe/adaptive-fit-in/792x1068/paris/996696999/variant/images/5dc65756-f580-49f0-a6ae-c41e0b2d84c9/996696999-0000-001.jpg",
+      "fecha": "2026-08-12T20:18:07Z",
+      "canal": "ofertas_vip"
+    }
+  ]
 }
