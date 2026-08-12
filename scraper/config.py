@@ -45,13 +45,13 @@ DESCUENTO_MINIMO_WEB_PCT = 20  # piso para aparecer en el feed de la web
 # por si hay que verificar/comprar rápido antes de que el comercio lo corrija.
 UMBRAL_DESCUENTO_EXTREMO = 90
 # (mínimo %, nombre de canal) — de mayor a menor: canal_para_descuento() devuelve el primer
-# tramo que matchea, así que un descuento de 60%+ cae en "ofertas_vip" y nunca llega al de 40%
+# tramo que matchea, así que un descuento de 50%+ cae en "ofertas_vip" y nunca llega al de 25%
 # — cada tramo es exclusivo de su canal, sin duplicar posteos. Sumar un tramo nuevo es agregar
 # una línea acá (en la posición correcta según su mínimo) más su @username en
 # CANAL_TELEGRAM_USERNAME, sin tocar el resto del código.
 TIERS_DESCUENTO = [
-    (60, "ofertas_vip"),
-    (40, "ofertas_40"),
+    (50, "ofertas_vip"),
+    (25, "ofertas_40"),
 ]
 
 # cada cuántas horas se le da otra chance a un producto que sigue siendo récord (precio mínimo o

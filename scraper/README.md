@@ -34,8 +34,8 @@ Pages.
 - Falabella Chile y Xiaomi Chile (`mi.com/cl`) — agregar una tienda nueva implica un módulo en
   `fuentes/<tienda>/` más una entrada en `config.TIENDAS`, ver el resto del código como ejemplo.
 - El posteo automático a Telegram hoy está activo en dos canales/tiers, exclusivos por tramo (ver
-  `config.TIERS_DESCUENTO` y `config.CANAL_TELEGRAM_USERNAME`): `ofertas_40` (40-59% de
-  descuento) y `ofertas_vip` (60% o más — un producto de 65% cae directo en VIP y nunca se
+  `config.TIERS_DESCUENTO` y `config.CANAL_TELEGRAM_USERNAME`): `ofertas_40` (25-49% de
+  descuento) y `ofertas_vip` (50% o más — un producto de 55% cae directo en VIP y nunca se
   postea en el canal gratis). Sumar un tier nuevo es agregar una línea en ambos, en la posición
   correcta según su mínimo, **una vez que el bot ya sea admin** de ese canal (permiso "Publicar
   mensajes") — sin tocar el resto del código. El canal depende solo del % de descuento, es el
