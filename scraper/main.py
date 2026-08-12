@@ -27,6 +27,7 @@ import descubrimiento  # noqa: E402
 import git_publish  # noqa: E402
 import monitoreo_tiendas  # noqa: E402
 import ofertas_writer  # noqa: E402
+import run_lock  # noqa: E402
 import telegram_publisher  # noqa: E402
 from fuentes.falabella.listado import obtener_ofertas_listado  # noqa: E402
 from fuentes.falabella.producto import obtener_ofertas_productos_seguidos  # noqa: E402
@@ -229,64 +230,72 @@ async def _correr() -> None:
 
     repo_dir = git_publish.clonar_repo()
 
-    detectados_por_tienda: dict[config.Tienda, list[dict]] = {}
-    async with FetcherSession(impersonate=config.USER_AGENT_IMPERSONATE, timeout=config.HTTP_TIMEOUT_SEGUNDOS) as sesion:
-        for tienda in config.TIENDAS:
-            runner = _RUNNERS[tienda.id]
-            detectados, ok = await runner(sesion, repo_dir)
-            if ok:
-                detectados_por_tienda[tienda] = detectados
+    run_id = run_lock.adquirir_lock(repo_dir)
+    if run_id is None:
+        log.warning("Corrida abortada: ya hay otra corrida activa (ver log de run_lock arriba).")
+        return
 
-            if tienda.id != "fal":  # Falabella ya tiene su propia alerta (ver descubrimiento)
-                fallos = monitoreo_tiendas.registrar_resultado(repo_dir, tienda.id, ok)
-                if fallos and fallos % config.FALLOS_TIENDA_ANTES_DE_ALERTA == 0:
-                    await telegram_publisher.avisar_admin(
-                        f"{tienda.nombre} lleva {fallos} corridas fallando seguidas. Requiere revisión manual."
-                    )
+    try:
+        detectados_por_tienda: dict[config.Tienda, list[dict]] = {}
+        async with FetcherSession(impersonate=config.USER_AGENT_IMPERSONATE, timeout=config.HTTP_TIMEOUT_SEGUNDOS) as sesion:
+            for tienda in config.TIENDAS:
+                runner = _RUNNERS[tienda.id]
+                detectados, ok = await runner(sesion, repo_dir)
+                if ok:
+                    detectados_por_tienda[tienda] = detectados
 
-    ofertas_por_tienda: dict[config.Tienda, list[dict]] = {
-        tienda: ofertas_writer.procesar(repo_dir, detectados, tienda)
-        for tienda, detectados in detectados_por_tienda.items()
-    }
+                if tienda.id != "fal":  # Falabella ya tiene su propia alerta (ver descubrimiento)
+                    fallos = monitoreo_tiendas.registrar_resultado(repo_dir, tienda.id, ok)
+                    if fallos and fallos % config.FALLOS_TIENDA_ANTES_DE_ALERTA == 0:
+                        await telegram_publisher.avisar_admin(
+                            f"{tienda.nombre} lleva {fallos} corridas fallando seguidas. Requiere revisión manual."
+                        )
 
-    todas_candidatas = [oferta for ofertas in ofertas_por_tienda.values() for oferta in ofertas]
+        ofertas_por_tienda: dict[config.Tienda, list[dict]] = {
+            tienda: ofertas_writer.procesar(repo_dir, detectados, tienda)
+            for tienda, detectados in detectados_por_tienda.items()
+        }
 
-    # descuentos así de extremos suelen ser errores de precio del comercio — se postean primero
-    # (no se mezclan con el resto) y se avisa aparte al admin para que pueda verificar/comprar
-    # rápido antes de que el comercio lo corrija.
-    extremas = [o for o in todas_candidatas if o["descuento_pct"] >= config.UMBRAL_DESCUENTO_EXTREMO]
-    resto = [o for o in todas_candidatas if o["descuento_pct"] < config.UMBRAL_DESCUENTO_EXTREMO]
-    for oferta in extremas:
-        await telegram_publisher.avisar_admin(
-            f"🚨 Posible error de precio: {oferta['titulo']} — {oferta['descuento_pct']}% off "
-            f"en {oferta['comercio']}. {oferta['url']}"
+        todas_candidatas = [oferta for ofertas in ofertas_por_tienda.values() for oferta in ofertas]
+
+        # descuentos así de extremos suelen ser errores de precio del comercio — se postean primero
+        # (no se mezclan con el resto) y se avisa aparte al admin para que pueda verificar/comprar
+        # rápido antes de que el comercio lo corrija.
+        extremas = [o for o in todas_candidatas if o["descuento_pct"] >= config.UMBRAL_DESCUENTO_EXTREMO]
+        resto = [o for o in todas_candidatas if o["descuento_pct"] < config.UMBRAL_DESCUENTO_EXTREMO]
+        for oferta in extremas:
+            await telegram_publisher.avisar_admin(
+                f"🚨 Posible error de precio: {oferta['titulo']} — {oferta['descuento_pct']}% off "
+                f"en {oferta['comercio']}. {oferta['url']}"
+            )
+
+        # mezcla tiendas/productos/porcentajes al azar antes de postear — si no, se nota el orden de
+        # scrapeo (una tienda entera, categoría por categoría, antes de pasar a la siguiente). No
+        # afecta nada aguas abajo: ofertas_por_tienda (usado para confirmar publicaciones más abajo)
+        # es una lista aparte, sin mezclar.
+        random.shuffle(resto)
+        todas_candidatas = extremas + resto
+        ids_confirmados = await telegram_publisher.publicar_ofertas_nuevas(todas_candidatas)
+        for tienda, ofertas in ofertas_por_tienda.items():
+            ofertas_writer.confirmar_publicaciones(repo_dir, ofertas, ids_confirmados, tienda)
+
+        ofertas_writer.construir_feed_web(repo_dir, config.TIENDAS)
+
+        marca_tiempo = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        rutas_a_publicar = [config.RUTA_OFERTAS_JSON] + [tienda.ruta_estado for tienda in detectados_por_tienda]
+        if (repo_dir / config.RUTA_RUTAS_DESCUBIERTAS).exists():
+            rutas_a_publicar.append(config.RUTA_RUTAS_DESCUBIERTAS)
+        if (repo_dir / config.RUTA_FALLOS_TIENDAS).exists():
+            rutas_a_publicar.append(config.RUTA_FALLOS_TIENDAS)
+        if (repo_dir / config.RUTA_DESCUBRIMIENTO_FALLIDOS).exists():
+            rutas_a_publicar.append(config.RUTA_DESCUBRIMIENTO_FALLIDOS)
+        git_publish.publicar_cambios(
+            repo_dir,
+            rutas=rutas_a_publicar,
+            mensaje=f"chore(ofertas): actualización automática {marca_tiempo}",
         )
-
-    # mezcla tiendas/productos/porcentajes al azar antes de postear — si no, se nota el orden de
-    # scrapeo (una tienda entera, categoría por categoría, antes de pasar a la siguiente). No
-    # afecta nada aguas abajo: ofertas_por_tienda (usado para confirmar publicaciones más abajo)
-    # es una lista aparte, sin mezclar.
-    random.shuffle(resto)
-    todas_candidatas = extremas + resto
-    ids_confirmados = await telegram_publisher.publicar_ofertas_nuevas(todas_candidatas)
-    for tienda, ofertas in ofertas_por_tienda.items():
-        ofertas_writer.confirmar_publicaciones(repo_dir, ofertas, ids_confirmados, tienda)
-
-    ofertas_writer.construir_feed_web(repo_dir, config.TIENDAS)
-
-    marca_tiempo = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    rutas_a_publicar = [config.RUTA_OFERTAS_JSON] + [tienda.ruta_estado for tienda in detectados_por_tienda]
-    if (repo_dir / config.RUTA_RUTAS_DESCUBIERTAS).exists():
-        rutas_a_publicar.append(config.RUTA_RUTAS_DESCUBIERTAS)
-    if (repo_dir / config.RUTA_FALLOS_TIENDAS).exists():
-        rutas_a_publicar.append(config.RUTA_FALLOS_TIENDAS)
-    if (repo_dir / config.RUTA_DESCUBRIMIENTO_FALLIDOS).exists():
-        rutas_a_publicar.append(config.RUTA_DESCUBRIMIENTO_FALLIDOS)
-    git_publish.publicar_cambios(
-        repo_dir,
-        rutas=rutas_a_publicar,
-        mensaje=f"chore(ofertas): actualización automática {marca_tiempo}",
-    )
+    finally:
+        run_lock.liberar_lock(repo_dir, run_id)
 
 
 def main() -> None:

@@ -100,6 +100,13 @@ GIT_AUTHOR_NAME = "ofertas-bot"
 GIT_AUTHOR_EMAIL = "bot@localhost"
 GIT_CLONE_DIR = os.environ.get("SCRAPER_CLONE_DIR", "/tmp/ofertas-repo")
 
+# --- Lock entre corridas (evita que dos corridas se solapen, ej. un "Run Now" manual
+# mientras el cron de la hora sigue activo — ver scraper/run_lock.py) ---
+RUTA_RUN_LOCK = "scraper/run_lock.json"
+RUN_LOCK_TIMEOUT_SEGUNDOS = 45 * 60  # bien por debajo de la hora entre corridas del cron; una
+# corrida normal tarda minutos, no medias horas — si un lock supera esto se asume que la
+# corrida anterior colgó/crasheó sin liberarlo, y se pisa para no quedar trabado para siempre
+
 # --- Telegram ---
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 # chat_id (privado o de un grupo/canal admin) donde avisar problemas operativos, ej. el
