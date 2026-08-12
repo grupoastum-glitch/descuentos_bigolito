@@ -1,11 +1,13 @@
 """Orquestador: una corrida completa del scraper de ofertas, multi-tienda (ver config.TIENDAS).
 
-1. Clona el repo (necesita GITHUB_TOKEN).
+1. Clona el repo (necesita GITHUB_TOKEN) y conecta a Postgres (necesita DATABASE_URL).
 2. Corre el scraper de cada tienda de forma independiente — si una falla, no bloquea a las
-   demás (cada una tiene su propio archivo de estado, ver config.Tienda.ruta_estado).
-3. Escribe el estado de cada tienda + el feed combinado web/data/ofertas.json.
-4. Publica en Telegram las ofertas nuevas/con récord nuevo, de todas las tiendas juntas.
-5. Commitea y pushea — Cloudflare Pages redeploya la web al detectar el push.
+   demás (cada una tiene su propio estado, tabla `productos` en Postgres — ver scraper/db.py).
+3. Escribe el estado de cada tienda en Postgres + el feed combinado web/data/ofertas.json.
+4. Publica en Telegram las ofertas nuevas/con récord nuevo, de todas las tiendas juntas — cada
+   publicación confirmada se persiste al toque (ver ofertas_writer.registrar_evento_publicado),
+   no al final de toda la corrida.
+5. Commitea y pushea web/data/ofertas.json — Cloudflare Pages redeploya la web al detectar el push.
 """
 from __future__ import annotations
 
@@ -23,6 +25,7 @@ from scrapling.fetchers import FetcherSession, StealthySession
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
 import config  # noqa: E402 (después de load_dotenv a propósito, config lee os.environ)
+import db  # noqa: E402
 import descubrimiento  # noqa: E402
 import git_publish  # noqa: E402
 import monitoreo_tiendas  # noqa: E402
@@ -225,14 +228,18 @@ async def _correr() -> None:
         raise SystemExit("Falta GITHUB_TOKEN en el entorno")
     if not config.GITHUB_REPO:
         raise SystemExit("Falta GITHUB_REPO en el entorno")
+    if not config.DATABASE_URL:
+        raise SystemExit("Falta DATABASE_URL en el entorno")
 
     await asyncio.to_thread(_diagnostico_headless)
 
     repo_dir = git_publish.clonar_repo()
+    pool = await db.conectar()
 
-    run_id = run_lock.adquirir_lock(repo_dir)
-    if run_id is None:
+    con_lock = await run_lock.adquirir_lock(pool)
+    if con_lock is None:
         log.warning("Corrida abortada: ya hay otra corrida activa (ver log de run_lock arriba).")
+        await db.cerrar()
         return
 
     try:
@@ -252,7 +259,7 @@ async def _correr() -> None:
                         )
 
         ofertas_por_tienda: dict[config.Tienda, list[dict]] = {
-            tienda: ofertas_writer.procesar(repo_dir, detectados, tienda)
+            tienda: await ofertas_writer.procesar(pool, detectados, tienda)
             for tienda, detectados in detectados_por_tienda.items()
         }
 
@@ -270,19 +277,22 @@ async def _correr() -> None:
             )
 
         # mezcla tiendas/productos/porcentajes al azar antes de postear — si no, se nota el orden de
-        # scrapeo (una tienda entera, categoría por categoría, antes de pasar a la siguiente). No
-        # afecta nada aguas abajo: ofertas_por_tienda (usado para confirmar publicaciones más abajo)
-        # es una lista aparte, sin mezclar.
+        # scrapeo (una tienda entera, categoría por categoría, antes de pasar a la siguiente).
         random.shuffle(resto)
         todas_candidatas = extremas + resto
-        ids_confirmados = await telegram_publisher.publicar_ofertas_nuevas(todas_candidatas)
-        for tienda, ofertas in ofertas_por_tienda.items():
-            ofertas_writer.confirmar_publicaciones(repo_dir, ofertas, ids_confirmados, tienda)
 
-        ofertas_writer.construir_feed_web(repo_dir, config.TIENDAS)
+        async def _on_publicada(oferta: dict) -> None:
+            # se llama una vez por cada oferta que Telegram confirma que se mandó de verdad —
+            # persiste su evento de historial al toque, no al final de toda la corrida (ver
+            # docstring de ofertas_writer para el porqué).
+            await ofertas_writer.registrar_evento_publicado(pool, oferta)
+
+        await telegram_publisher.publicar_ofertas_nuevas(todas_candidatas, on_publicada=_on_publicada)
+
+        await ofertas_writer.construir_feed_web(repo_dir, pool)
 
         marca_tiempo = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        rutas_a_publicar = [config.RUTA_OFERTAS_JSON] + [tienda.ruta_estado for tienda in detectados_por_tienda]
+        rutas_a_publicar = [config.RUTA_OFERTAS_JSON]
         if (repo_dir / config.RUTA_RUTAS_DESCUBIERTAS).exists():
             rutas_a_publicar.append(config.RUTA_RUTAS_DESCUBIERTAS)
         if (repo_dir / config.RUTA_FALLOS_TIENDAS).exists():
@@ -295,7 +305,8 @@ async def _correr() -> None:
             mensaje=f"chore(ofertas): actualización automática {marca_tiempo}",
         )
     finally:
-        run_lock.liberar_lock(repo_dir, run_id)
+        await run_lock.liberar_lock(con_lock, pool)
+        await db.cerrar()
 
 
 def main() -> None:

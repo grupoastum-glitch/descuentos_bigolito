@@ -1,5 +1,6 @@
-"""Fusiona las fuentes de datos, decide qué se publica y escribe el estado por tienda (ver
-config.TIENDAS) + el feed combinado web/data/ofertas.json (ver construir_feed_web).
+"""Fusiona las fuentes de datos, decide qué se publica y escribe el estado por tienda (tabla
+`productos` en Postgres — ver db.py) + el feed combinado web/data/ofertas.json (ver
+construir_feed_web).
 
 Modelo de publicación (reemplaza "cualquier baja de precio"): un producto solo se publica en
 Telegram cuando es un récord real —
@@ -16,10 +17,12 @@ volver a postearse el mismo día si vuelve a cumplir alguna de las Reglas 1/2/3 
 HORAS_REPUBLICACION_REGLA3, varias veces en un mismo día).
 
 El evento de historial de la corrida actual NO se persiste dentro de procesar() — recién se
-aplica en confirmar_publicaciones(), después de que telegram_publisher confirma cuáles ofertas
-realmente se mandaron. Así, un producto sin canal activo (o cuyo envío falló) no queda marcado
-como "ya publicado" sin que nadie lo haya visto — sigue disponible para publicarse la próxima
-vez que corra el scraper.
+aplica en registrar_evento_publicado(), llamado por telegram_publisher como callback una vez por
+cada oferta que Telegram confirma que se mandó de verdad. Así, un producto sin canal activo (o
+cuyo envío falló) no queda marcado como "ya publicado" sin que nadie lo haya visto — sigue
+disponible para publicarse la próxima vez que corra el scraper. Y a diferencia de un post-proceso
+al final de toda la corrida, cada evento queda durable en el instante en que se confirma el
+envío — si la corrida se corta a mitad de camino (redeploy, crash), lo ya publicado no se pierde.
 """
 from __future__ import annotations
 
@@ -29,7 +32,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+import asyncpg
+
 import config
+import db
 from fuentes.falabella.parsing import calcular_descuento_pct  # noqa: F401 (reexportado para tests)
 
 log = logging.getLogger("scraper.ofertas_writer")
@@ -41,14 +47,6 @@ def _id_estable(tienda_id: str, producto_id: str) -> str:
 
 def _ahora_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _cargar_json(ruta: Path, valor_por_defecto):
-    try:
-        with open(ruta, encoding="utf-8") as archivo:
-            return json.load(archivo)
-    except (OSError, json.JSONDecodeError):
-        return valor_por_defecto
 
 
 @dataclass(frozen=True)
@@ -82,7 +80,7 @@ def _horas_entre(fecha_iso_desde: str, fecha_iso_hasta: str) -> float:
 
 def _evaluar_reglas(historial: list[dict], precio_actual: int, descuento_pct: int, ahora: str) -> DecisionPublicacion:
     """Función pura: decide si el estado actual amerita publicar, y por qué regla.
-    No conoce Telegram."""
+    No conoce Telegram ni de dónde viene el historial."""
     stats = _stats_historial(historial)
     ultimo = historial[-1]
     es_evento_nuevo = precio_actual != ultimo["precio"] or descuento_pct != ultimo["descuento_pct"]
@@ -111,59 +109,48 @@ def _evaluar_reglas(historial: list[dict], precio_actual: int, descuento_pct: in
     return DecisionPublicacion()
 
 
-def procesar(repo_dir: Path, items_detectados: list[dict], tienda: config.Tienda) -> list[dict]:
-    """Actualiza el estado de `tienda` (scraper/estado_precios_<tienda>.json) a partir de los
-    items detectados en esta corrida. NO escribe ofertas.json — ver construir_feed_web(), que
-    junta el estado de todas las tiendas en un solo feed (llamarla aparte, una vez por corrida).
+async def procesar(pool: asyncpg.Pool, items_detectados: list[dict], tienda: config.Tienda) -> list[dict]:
+    """Actualiza el estado de `tienda` (tabla `productos`/`historial_precios` en Postgres) a
+    partir de los items detectados en esta corrida. NO escribe ofertas.json — ver
+    construir_feed_web(), que junta el estado de todas las tiendas en un solo feed (llamarla
+    aparte, una vez por corrida).
 
     items_detectados: dicts con producto_id, titulo, marca, url, comercio, imagen,
     precio_actual, precio_normal, descuento_pct (de fuentes/<tienda>/...).
 
     Devuelve las ofertas que corresponde publicar en Telegram (ver Reglas 1/2/3 arriba).
     """
-    ruta_estado = repo_dir / tienda.ruta_estado
-
-    estado = _cargar_json(ruta_estado, {"productos": {}})
-    productos_estado = estado.setdefault("productos", {})
-
     ahora = _ahora_iso()
-    ofertas_para_publicar = []
 
     # dedupe por producto_id: el mismo producto puede salir tanto del listado general
     # como de productos_seguidos.json en la misma corrida.
     por_id = {item["producto_id"]: item for item in items_detectados}
+    claves = [_id_estable(tienda.id, pid) for pid in por_id]
+
+    productos_estado = await db.cargar_productos_con_historial(pool, claves)
+
+    ofertas_para_publicar = []
+    registros_a_upsertear = []
 
     for producto_id, item in por_id.items():
         clave = _id_estable(tienda.id, producto_id)
         anterior = productos_estado.get(clave)
 
-        # migración: productos guardados con el modelo viejo no tienen la CLAVE historial (a
-        # diferencia de un producto nuevo del modelo actual, que sí la tiene pero puede estar
-        # vacía mientras su primera publicación no se confirma — ver docstring del módulo, no
-        # tratar ambos casos igual). Se les siembra un evento, fechado HOY (no con la fecha real
-        # vieja) para que Regla 3 no dispare de inmediato para toda la base el día del deploy.
-        if anterior and "historial" not in anterior:
-            anterior = dict(anterior)
-            anterior["historial"] = [{
-                "precio": anterior["precio_actual"],
-                "descuento_pct": anterior["descuento_pct"],
-                "fecha": ahora,
-            }]
-
-        historial = list(anterior["historial"]) if anterior else []
+        historial = anterior["historial"] if anterior else []
         primera_deteccion = anterior["primera_deteccion"] if anterior else ahora
 
         if historial:
             decision = _evaluar_reglas(historial, item["precio_actual"], item["descuento_pct"], ahora)
         else:
-            # producto 100% nuevo: su primer precio ya "es" su mínimo histórico.
+            # producto 100% nuevo (o trackeado pero sin ninguna publicación confirmada todavía):
+            # su primer precio ya "es" su mínimo histórico.
             decision = DecisionPublicacion(regla="regla_1")
 
         es_candidata = decision.regla is not None
 
-        # el evento de esta corrida NO se persiste todavía (ver docstring del módulo) — solo
-        # se arma en memoria para mostrarlo en el caption si es_candidata, y se guarda si/cuando
-        # confirmar_publicaciones() confirme que el mensaje realmente se mandó.
+        # el evento de esta corrida NO se persiste todavía (ver docstring del módulo) — solo se
+        # arma en memoria para mostrarlo en el caption si es_candidata, y se guarda si/cuando
+        # registrar_evento_publicado() confirme que el mensaje realmente se mandó.
         evento_nuevo = {
             "precio": item["precio_actual"],
             "descuento_pct": item["descuento_pct"],
@@ -171,6 +158,9 @@ def procesar(repo_dir: Path, items_detectados: list[dict], tienda: config.Tienda
         }
 
         registro = {
+            "id": clave,
+            "tienda_id": tienda.id,
+            "producto_id": producto_id,
             "url": item["url"],
             "titulo": item["titulo"],
             "marca": item.get("marca"),
@@ -181,9 +171,8 @@ def procesar(repo_dir: Path, items_detectados: list[dict], tienda: config.Tienda
             "primera_deteccion": primera_deteccion,
             "ultima_actualizacion": ahora,
             "activo": True,
-            "historial": historial,
         }
-        productos_estado[clave] = registro
+        registros_a_upsertear.append(registro)
 
         if es_candidata:
             ofertas_para_publicar.append({
@@ -203,103 +192,51 @@ def procesar(repo_dir: Path, items_detectados: list[dict], tienda: config.Tienda
                 "comercio": tienda.nombre,
             })
 
-    # un producto que ya no aparece en esta corrida se marca inactivo (dejó de estar en oferta)
-    ids_vistos_hoy = {_id_estable(tienda.id, pid) for pid in por_id}
-    for clave, registro in productos_estado.items():
-        if clave not in ids_vistos_hoy:
-            registro["activo"] = False
-
-    ruta_estado.parent.mkdir(parents=True, exist_ok=True)
-    with open(ruta_estado, "w", encoding="utf-8") as archivo:
-        json.dump(estado, archivo, ensure_ascii=False, indent=2)
+    await db.upsert_productos(pool, registros_a_upsertear)
+    await db.marcar_inactivos(pool, tienda.id, claves)
 
     log.info(
-        "%s: %s productos en estado. %s candidatas a publicar en Telegram.",
-        tienda.nombre, len(productos_estado), len(ofertas_para_publicar),
+        "%s: %s productos tocados. %s candidatas a publicar en Telegram.",
+        tienda.nombre, len(registros_a_upsertear), len(ofertas_para_publicar),
     )
 
     return ofertas_para_publicar
 
 
-def construir_feed_web(repo_dir: Path, tiendas: list[config.Tienda]) -> None:
-    """Junta el estado de TODAS las tiendas en un solo web/data/ofertas.json. Se llama una sola
-    vez por corrida, después de procesar() todas las tiendas — si cada tienda escribiera el feed
-    completo por su cuenta, la última en correr pisaría los productos de las demás."""
+async def construir_feed_web(repo_dir: Path, pool: asyncpg.Pool) -> None:
+    """Junta el estado activo de TODAS las tiendas en un solo web/data/ofertas.json. Se llama
+    una sola vez por corrida, después de procesar() todas las tiendas."""
     ahora = _ahora_iso()
-    feed = []
+    nombre_por_tienda_id = {tienda.id: tienda.nombre for tienda in config.TIENDAS}
 
-    for tienda in tiendas:
-        ruta_estado = repo_dir / tienda.ruta_estado
-        estado = _cargar_json(ruta_estado, {"productos": {}})
-        for clave, registro in estado.get("productos", {}).items():
-            if not registro.get("activo"):
-                continue
-            if registro["descuento_pct"] < config.DESCUENTO_MINIMO_WEB_PCT:
-                continue
-            feed.append({
-                "id": clave,
-                "titulo": registro["titulo"],
-                "descuento": f"{registro['descuento_pct']}%",
-                "comercio": tienda.nombre,
-                "categoria": None,
-                "cupon": None,
-                "detalle": None,
-                "url": registro["url"],
-                "imagen": registro.get("imagen"),
-                "fecha": registro["primera_deteccion"],
-                "canal": config.canal_para_descuento(registro["descuento_pct"]),
-            })
-
-    feed.sort(key=lambda oferta: oferta["fecha"], reverse=True)
-    feed = feed[: config.MAX_OFERTAS_WEB_TEASER]
+    filas = await db.feed_activo(pool, config.DESCUENTO_MINIMO_WEB_PCT, config.MAX_OFERTAS_WEB_TEASER)
+    feed = [{
+        "id": fila["id"],
+        "titulo": fila["titulo"],
+        "descuento": f"{fila['descuento_pct']}%",
+        "comercio": nombre_por_tienda_id[fila["tienda_id"]],
+        "categoria": None,
+        "cupon": None,
+        "detalle": None,
+        "url": fila["url"],
+        "imagen": fila["imagen"],
+        "fecha": fila["primera_deteccion"].strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "canal": config.canal_para_descuento(fila["descuento_pct"]),
+    } for fila in filas]
 
     ruta_ofertas = repo_dir / config.RUTA_OFERTAS_JSON
     ruta_ofertas.parent.mkdir(parents=True, exist_ok=True)
     with open(ruta_ofertas, "w", encoding="utf-8") as archivo:
         json.dump({"actualizado": ahora, "ofertas": feed}, archivo, ensure_ascii=False, indent=2)
 
-    log.info("ofertas.json: %s ofertas activas de %s tienda(s).", len(feed), len(tiendas))
+    log.info("ofertas.json: %s ofertas activas.", len(feed))
 
 
-def confirmar_publicaciones(
-    repo_dir: Path, candidatas: list[dict], ids_confirmados: set[str], tienda: config.Tienda
-) -> None:
-    """Aplica el evento de historial SOLO para las candidatas de `procesar()` cuyo `id` está en
-    `ids_confirmados` (las que telegram_publisher.publicar_ofertas_nuevas confirma que
-    realmente se mandaron). Llamar después de intentar el envío, con su resultado.
-
-    Las candidatas que no se confirman (sin canal activo, o cuyo envío falló del todo) quedan
-    sin tocar — su historial no cambia, así que siguen disponibles para publicarse en una
-    corrida futura en vez de quedar marcadas como "ya publicadas" sin que nadie las haya visto.
-    """
-    if not ids_confirmados:
-        return
-
-    ruta_estado = repo_dir / tienda.ruta_estado
-    estado = _cargar_json(ruta_estado, {"productos": {}})
-    productos_estado = estado.setdefault("productos", {})
-
-    confirmadas_de_esta_tienda = 0
-    for oferta in candidatas:
-        if oferta["id"] not in ids_confirmados:
-            continue
-        confirmadas_de_esta_tienda += 1
-        registro = productos_estado.get(oferta["id"])
-        if registro is None:
-            continue  # no debería pasar — defensivo, ej. si el registro se borró entre medio
-        registro["historial"] = registro["historial"] + [{
-            "precio": oferta["precio_actual"],
-            "descuento_pct": oferta["descuento_pct"],
-            "fecha": oferta["fecha"],
-        }]
-
-    ruta_estado.parent.mkdir(parents=True, exist_ok=True)
-    with open(ruta_estado, "w", encoding="utf-8") as archivo:
-        json.dump(estado, archivo, ensure_ascii=False, indent=2)
-
-    # ids_confirmados llega compartido entre todas las tiendas (una sola llamada a
-    # publicar_ofertas_nuevas para todas juntas) — contar cuántas de LAS CANDIDATAS DE ESTA
-    # TIENDA quedaron confirmadas, no el tamaño del set combinado (ver incidencia 2026-08-11:
-    # "Falabella: 94/88" era el conteo global de ambas tiendas, no el de Falabella sola).
-    log.info("%s: historial confirmado para %s/%s candidatas publicadas en Telegram.",
-              tienda.nombre, confirmadas_de_esta_tienda, len(candidatas))
+async def registrar_evento_publicado(pool: asyncpg.Pool, oferta: dict) -> None:
+    """Callback para telegram_publisher.publicar_ofertas_nuevas(on_publicada=...) — se llama UNA
+    vez por cada oferta que Telegram confirma que se mandó de verdad. Inserta su evento de
+    historial de inmediato (ver docstring del módulo: esto es lo que hace que la corrida no
+    pierda progreso si se corta a mitad de camino)."""
+    await db.insertar_evento_historial(
+        pool, oferta["id"], oferta["precio_actual"], oferta["descuento_pct"], oferta["fecha"],
+    )

@@ -18,13 +18,16 @@ Pages.
    Xiaomi (`mi.com/cl`) trae los datos en `window.__PRELOADED_STATE__` en sus páginas de
    categoría (ver [`fuentes/xiaomi/listado.py`](fuentes/xiaomi/listado.py)). Ambas evitan parsear
    clases CSS (que cambian con cada build) leyendo el JSON que el propio sitio ya embebe.
-4. Decide qué es "nuevo" por tienda, cada una con su propio archivo de estado (ver
-   `config.TIENDAS`) que guarda el historial de **todos** los productos vistos alguna vez, no
-   solo los activos.
+4. Decide qué es "nuevo" por tienda contra el estado en Postgres (tabla `productos`, ver
+   `scraper/db.py`), que guarda el historial de **todos** los productos vistos alguna vez, no
+   solo los activos. Cada publicación confirmada por Telegram se guarda ahí al toque (no al
+   final de toda la corrida) — así una corrida interrumpida a mitad de camino no reenvía lo que
+   ya se publicó de verdad.
 5. Escribe `ofertas.json` combinando las ofertas activas de todas las tiendas por encima del
    piso mínimo, y postea en Telegram solo las que son récord de precio/descuento nuevo (ver
    `ofertas_writer.py`) — así una oferta que sigue vigente sin cambios no se re-postea cada hora.
-6. Commitea y pushea `ofertas.json` + el estado de cada tienda a `main`.
+6. Commitea y pushea `ofertas.json` a `main` (el estado de cada tienda vive en Postgres, no en
+   el repo).
 
 ## Alcance inicial (a propósito, acotado)
 
@@ -63,6 +66,7 @@ fork o una rama de prueba en `.env` antes de correrlo.
 | `GITHUB_TOKEN` | Fine-grained PAT restringido a este repo, permiso `Contents: Read and write`. Clona y pushea. |
 | `GITHUB_REPO` | `owner/repo`. Requerido — sin default, para no publicar por error en el repo equivocado. |
 | `GITHUB_BRANCH` | Rama a la que pushear (default: `main`). |
+| `DATABASE_URL` | Conexión a Postgres (addon de Railway) — estado de productos/historial de precios y lock entre corridas, ver `scraper/db.py` y `scraper/run_lock.py`. Requerida, sin default. |
 | `TELEGRAM_BOT_TOKEN` | El mismo token del bot (`bot/.env`) — necesita permiso de admin en cada canal de `config.CANAL_TELEGRAM_USERNAME`. |
 
 ## Desplegar en Railway
@@ -75,4 +79,8 @@ job pesado que solo debe correr una vez por hora.
    el checkout completo para llegar a `web/data/`).
 2. **Dockerfile Path**: `scraper/Dockerfile`.
 3. **Cron Schedule**: `0 * * * *`.
-4. **Variables**: `GITHUB_TOKEN`, `TELEGRAM_BOT_TOKEN`.
+4. **Variables**: `GITHUB_TOKEN`, `DATABASE_URL` (referencia al addon de Postgres del mismo
+   proyecto Railway — no se conecta sola, hay que agregarla a mano en la pestaña Variables del
+   servicio), `TELEGRAM_BOT_TOKEN`.
+5. **Watch Paths**: `scraper/**` — para que un push que solo toca `bot/`/`web/`/docs no dispare
+   un redeploy de este servicio (y no corte una corrida activa).

@@ -100,12 +100,10 @@ GIT_AUTHOR_NAME = "ofertas-bot"
 GIT_AUTHOR_EMAIL = "bot@localhost"
 GIT_CLONE_DIR = os.environ.get("SCRAPER_CLONE_DIR", "/tmp/ofertas-repo")
 
-# --- Lock entre corridas (evita que dos corridas se solapen, ej. un "Run Now" manual
-# mientras el cron de la hora sigue activo — ver scraper/run_lock.py) ---
-RUTA_RUN_LOCK = "scraper/run_lock.json"
-RUN_LOCK_TIMEOUT_SEGUNDOS = 45 * 60  # bien por debajo de la hora entre corridas del cron; una
-# corrida normal tarda minutos, no medias horas — si un lock supera esto se asume que la
-# corrida anterior colgó/crasheó sin liberarlo, y se pisa para no quedar trabado para siempre
+# --- Base de datos (estado de productos/historial de precios y lock entre corridas — ver
+# scraper/db.py y scraper/run_lock.py; reemplaza los estado_precios_<tienda>.json y el
+# run_lock.json de antes, ambos vivían commiteados a git) ---
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 # --- Telegram ---
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -126,22 +124,22 @@ RUTA_PRODUCTOS_SEGUIDOS = "scraper/productos_seguidos.json"
 
 @dataclass(frozen=True)
 class Tienda:
-    id: str  # prefijo de clave en el estado — ver TIENDAS, no cambiar el de Falabella
+    id: str  # prefijo de clave del producto (f"{id}_{producto_id}") y tienda_id en la tabla
+             # `productos` de Postgres — ver TIENDAS, no cambiar el de Falabella
     nombre: str  # para el feed web y el hashtag del caption de Telegram
-    ruta_estado: str
 
 
 # El id de Falabella es "fal" (no "falabella") a propósito: ofertas_writer ya arma las claves del
 # estado como f"fal_{producto_id}" desde antes de que existiera este framework — cambiar el
-# prefijo reindexaría los ~2841 productos ya trackeados y el scraper los trataría como nunca
-# vistos, disparando una republicación masiva (mismo riesgo que ya se evitó con la migración de
-# historial y el rename del archivo de estado). Xiaomi no tiene ese problema, su id puede ser
-# legible desde el día uno.
+# prefijo reindexaría los ~2841 productos ya trackeados en la tabla `productos` y el scraper los
+# trataría como nunca vistos, disparando una republicación masiva (mismo riesgo que ya se evitó
+# con la migración de historial y el rename del archivo de estado, cuando el estado todavía era
+# JSON). Xiaomi no tiene ese problema, su id puede ser legible desde el día uno.
 TIENDAS = [
-    Tienda(id="fal", nombre="Falabella", ruta_estado="scraper/estado_precios_falabella.json"),
-    Tienda(id="xiaomi", nombre="Xiaomi", ruta_estado="scraper/estado_precios_xiaomi.json"),
-    Tienda(id="ripley", nombre="Ripley", ruta_estado="scraper/estado_precios_ripley.json"),
-    Tienda(id="paris", nombre="Paris", ruta_estado="scraper/estado_precios_paris.json"),
+    Tienda(id="fal", nombre="Falabella"),
+    Tienda(id="xiaomi", nombre="Xiaomi"),
+    Tienda(id="ripley", nombre="Ripley"),
+    Tienda(id="paris", nombre="Paris"),
 ]
 
 

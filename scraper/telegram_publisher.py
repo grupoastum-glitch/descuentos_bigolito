@@ -13,6 +13,7 @@ import html
 import logging
 import time
 from datetime import datetime
+from typing import Awaitable, Callable
 
 from telegram import Bot
 from telegram.constants import ParseMode
@@ -154,11 +155,14 @@ async def _enviar_con_reintento(bot: Bot, chat_id: str, oferta: dict) -> bool:
     return False
 
 
-async def publicar_ofertas_nuevas(ofertas: list[dict]) -> set[str]:
-    """Intenta publicar cada oferta en su canal. Devuelve los `id` de las que realmente se
-    mandaron — pasarlo a ofertas_writer.confirmar_publicaciones() para que el historial solo
-    se actualice en las que de verdad llegaron a Telegram (no en las que no tenían canal activo
-    o cuyo envío falló del todo)."""
+async def publicar_ofertas_nuevas(
+    ofertas: list[dict],
+    on_publicada: Callable[[dict], Awaitable[None]] | None = None,
+) -> set[str]:
+    """Intenta publicar cada oferta en su canal. Por cada una que se manda de verdad, llama
+    `on_publicada(oferta)` (si se pasó) para que el caller persista el evento de historial al
+    toque — no hace falta esperar a que termine todo el loop (ver ofertas_writer.registrar_evento_publicado).
+    Devuelve igual el set completo de `id` confirmados, útil para logging/observabilidad."""
     ids_confirmados: set[str] = set()
     if not ofertas:
         return ids_confirmados
@@ -192,6 +196,18 @@ async def publicar_ofertas_nuevas(ofertas: list[dict]) -> set[str]:
                 if publicado:
                     log.info("Publicado en %s: %s", chat_id, oferta["titulo"])
                     ids_confirmados.add(oferta["id"])
+                    if on_publicada is not None:
+                        try:
+                            await on_publicada(oferta)
+                        except Exception:
+                            # un error transitorio (ej. de la base de datos) no debe cortar el
+                            # envío del resto — la peor consecuencia es la misma que existía
+                            # antes de este callback (una posible republicación futura), no
+                            # perder el envío que ya se hizo.
+                            log.exception(
+                                "on_publicada falló para %s — el mensaje SÍ se mandó a Telegram, "
+                                "el evento de historial no quedó registrado.", oferta["id"],
+                            )
                 else:
                     log.error(
                         "Se agotaron los reintentos por flood control en %s para la oferta %s — "
