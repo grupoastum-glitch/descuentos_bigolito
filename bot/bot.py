@@ -61,7 +61,7 @@ def teclado_inicio(config: dict) -> InlineKeyboardMarkup | None:
 
     filas = [[InlineKeyboardButton(c["nombre"], url=c["url"])] for c in ofertas if c.get("url")]
     if vip and vip.get("url"):
-        filas.append([InlineKeyboardButton(f"👑 {vip['nombre']}", url=vip["url"])])
+        filas.append([InlineKeyboardButton(vip["nombre"], url=vip["url"])])
     if contacto and contacto.get("url"):
         filas.append([InlineKeyboardButton("🆘 Ayuda", url=contacto["url"])])
     filas.append([InlineKeyboardButton("ℹ️ Información", callback_data="informacion")])
