@@ -2,12 +2,14 @@
 
 1. Clona el repo (necesita GITHUB_TOKEN) y conecta a Postgres (necesita DATABASE_URL).
 2. Corre el scraper de cada tienda de forma independiente — si una falla, no bloquea a las
-   demás (cada una tiene su propio estado, tabla `productos` en Postgres — ver scraper/db.py).
-3. Escribe el estado de cada tienda en Postgres + el feed combinado web/data/ofertas.json.
-4. Publica en Telegram las ofertas nuevas/con récord nuevo, de todas las tiendas juntas — cada
-   publicación confirmada se persiste al toque (ver ofertas_writer.registrar_evento_publicado),
-   no al final de toda la corrida.
-5. Commitea y pushea web/data/ofertas.json — Cloudflare Pages redeploya la web al detectar el push.
+   demás. Apenas cada una termina, se escribe su estado en Postgres (tabla `productos` — ver
+   scraper/db.py), sin esperar a las demás tiendas — si la corrida se corta a mitad de camino,
+   lo de las tiendas que ya terminaron no se pierde.
+3. Publica en Telegram las ofertas nuevas/con récord nuevo, de todas las tiendas juntas (mezcladas
+   al azar) — cada publicación confirmada se persiste al toque (ver
+   ofertas_writer.registrar_evento_publicado), no al final de toda la corrida.
+4. Escribe el feed combinado web/data/ofertas.json y lo commitea/pushea — Cloudflare Pages
+   redeploya la web al detectar el push.
 """
 from __future__ import annotations
 
@@ -243,13 +245,19 @@ async def _correr() -> None:
         return
 
     try:
-        detectados_por_tienda: dict[config.Tienda, list[dict]] = {}
+        # procesar() (upsert a Postgres) se llama tienda por tienda, apenas cada una termina de
+        # scrapear — no se espera a que las 4 terminen. Así, si la corrida se corta a mitad de
+        # camino (crash, redeploy), el estado de las tiendas que sí alcanzaron a terminar ya
+        # quedó guardado, en vez de perderse. El envío a Telegram sigue siendo al final, con
+        # todas las tiendas mezcladas (ver shuffle más abajo), para que no se note el orden de
+        # scrapeo.
+        todas_candidatas: list[dict] = []
         async with FetcherSession(impersonate=config.USER_AGENT_IMPERSONATE, timeout=config.HTTP_TIMEOUT_SEGUNDOS) as sesion:
             for tienda in config.TIENDAS:
                 runner = _RUNNERS[tienda.id]
                 detectados, ok = await runner(sesion, repo_dir)
                 if ok:
-                    detectados_por_tienda[tienda] = detectados
+                    todas_candidatas.extend(await ofertas_writer.procesar(pool, detectados, tienda))
 
                 if tienda.id != "fal":  # Falabella ya tiene su propia alerta (ver descubrimiento)
                     fallos = monitoreo_tiendas.registrar_resultado(repo_dir, tienda.id, ok)
@@ -257,13 +265,6 @@ async def _correr() -> None:
                         await telegram_publisher.avisar_admin(
                             f"{tienda.nombre} lleva {fallos} corridas fallando seguidas. Requiere revisión manual."
                         )
-
-        ofertas_por_tienda: dict[config.Tienda, list[dict]] = {
-            tienda: await ofertas_writer.procesar(pool, detectados, tienda)
-            for tienda, detectados in detectados_por_tienda.items()
-        }
-
-        todas_candidatas = [oferta for ofertas in ofertas_por_tienda.values() for oferta in ofertas]
 
         # descuentos así de extremos suelen ser errores de precio del comercio — se postean primero
         # (no se mezclan con el resto) y se avisa aparte al admin para que pueda verificar/comprar
