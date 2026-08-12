@@ -61,12 +61,15 @@ TIERS_DESCUENTO = [
 # de este tamaño que pase.
 HORAS_REPUBLICACION_REGLA3 = 6
 
-# @username de Telegram por canal (el bot debe ser admin ahí con permiso "Publicar mensajes").
-# Sus claves son, a la vez, los únicos canales que reciben posteo automático — sumar/sacar una
-# entrada acá activa/desactiva el posteo en ese canal, sin ningún otro cambio de código.
+# Destino de Telegram por canal (el bot debe ser admin ahí con permiso "Publicar mensajes"):
+# @username para un canal público, o chat_id numérico (siempre negativo, ej. "-1004438197572")
+# para uno privado — canal_para_descuento() no distingue, telegram_publisher.py sí, al armar el
+# chat_id final. Sus claves son, a la vez, los únicos canales que reciben posteo automático —
+# sumar/sacar una entrada acá activa/desactiva el posteo en ese canal, sin ningún otro cambio de
+# código.
 CANAL_TELEGRAM_USERNAME = {
     "ofertas_40": "descuentos_bigolito",
-    "ofertas_vip": "super_descuentos_bigolito",
+    "ofertas_vip": "-1004438197572",
 }
 
 

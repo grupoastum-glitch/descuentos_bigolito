@@ -174,12 +174,14 @@ async def publicar_ofertas_nuevas(
     ultimo_posteo_por_canal: dict[str, float] = {}
     async with bot:
         for oferta in ofertas:
-            username = config.CANAL_TELEGRAM_USERNAME.get(oferta.get("canal"))
-            if not username:
+            valor = config.CANAL_TELEGRAM_USERNAME.get(oferta.get("canal"))
+            if not valor:
                 # tier sin canal activo todavía (ver config.CANAL_TELEGRAM_USERNAME) — se omite,
                 # sigue disponible como candidata en la próxima corrida (no se confirma acá)
                 continue
-            chat_id = f"@{username}"
+            # canal privado (sin @username, ver config.CANAL_TELEGRAM_USERNAME): la Bot API lo
+            # direcciona por su chat_id numérico, siempre negativo — canal público: por @username.
+            chat_id = valor if valor.startswith("-") else f"@{valor}"
 
             # el límite de flood control de Telegram es por chat, no global del bot — dos
             # posteos seguidos a canales distintos no compiten por el mismo límite. Además,
