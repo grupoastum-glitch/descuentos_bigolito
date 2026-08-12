@@ -125,11 +125,22 @@ async def _procesar_email_vip(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     telegram_user_id = update.effective_user.id
     try:
+        # Sin preapproval_plan_id a propósito: esa variante exige card_token_id (tarjeta
+        # tokenizada de antemano, pensado para un checkout propio) y no genera un init_point
+        # para redirigir — la que sí lo genera es esta, "sin plan asociado" con status=pending,
+        # confirmado contra la documentación oficial tras un 400 real (card_token_id is required).
         resultado = context.bot_data["mp_sdk"].preapproval().create({
-            "preapproval_plan_id": context.bot_data["mp_plan_id"],
-            "payer_email": email,
+            "reason": "Suscripción VIP — Descuentos Bigolito",
             "external_reference": f"{telegram_user_id}:{CANAL_ID_VIP}",
+            "payer_email": email,
+            "auto_recurring": {
+                "frequency": context.bot_data["mp_frecuencia"],
+                "frequency_type": context.bot_data["mp_frecuencia_tipo"],
+                "transaction_amount": context.bot_data["mp_monto"],
+                "currency_id": "CLP",
+            },
             "back_url": BACK_URL_MERCADOPAGO,
+            "status": "pending",
         })
         resultado.raise_for_status()
     except Exception:
@@ -199,15 +210,20 @@ def main() -> None:
         raise SystemExit("Falta TELEGRAM_BOT_TOKEN en bot/.env")
 
     mp_access_token = os.environ.get("MERCADOPAGO_ACCESS_TOKEN")
-    mp_plan_id = os.environ.get("MERCADOPAGO_PREAPPROVAL_PLAN_ID")
-    if not mp_access_token or not mp_plan_id:
+    mp_monto = os.environ.get("MERCADOPAGO_SUSCRIPCION_MONTO")
+    mp_frecuencia = os.environ.get("MERCADOPAGO_SUSCRIPCION_FRECUENCIA")
+    mp_frecuencia_tipo = os.environ.get("MERCADOPAGO_SUSCRIPCION_FRECUENCIA_TIPO")
+    if not all([mp_access_token, mp_monto, mp_frecuencia, mp_frecuencia_tipo]):
         raise SystemExit(
-            "Falta MERCADOPAGO_ACCESS_TOKEN o MERCADOPAGO_PREAPPROVAL_PLAN_ID en bot/.env"
+            "Falta MERCADOPAGO_ACCESS_TOKEN, MERCADOPAGO_SUSCRIPCION_MONTO, "
+            "MERCADOPAGO_SUSCRIPCION_FRECUENCIA o MERCADOPAGO_SUSCRIPCION_FRECUENCIA_TIPO en bot/.env"
         )
 
     app = Application.builder().token(token).post_init(sincronizar_perfil).build()
     app.bot_data["mp_sdk"] = mercadopago.SDK(mp_access_token)
-    app.bot_data["mp_plan_id"] = mp_plan_id
+    app.bot_data["mp_monto"] = int(mp_monto)
+    app.bot_data["mp_frecuencia"] = int(mp_frecuencia)
+    app.bot_data["mp_frecuencia_tipo"] = mp_frecuencia_tipo
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(cb_informacion, pattern="^informacion$"))
