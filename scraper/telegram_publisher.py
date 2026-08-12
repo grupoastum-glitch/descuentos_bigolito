@@ -43,6 +43,10 @@ def _formatear_caption(oferta: dict) -> str:
     hashtag_comercio = oferta["comercio"].replace(" ", "")
     lineas = [
         f"🤖 🎯 #{hashtag_comercio} ✨💰 Dscto. {oferta['descuento_pct']}%",
+    ]
+    if oferta["descuento_pct"] >= config.UMBRAL_DESCUENTO_EXTREMO:
+        lineas.append("🚨 DESCUENTO EXTREMO — posible error de precio, aprovecha antes que lo corrijan 🚨")
+    lineas += [
         "",
         titulo,
         "",

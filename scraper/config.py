@@ -40,6 +40,10 @@ GIT_TIMEOUT_SEGUNDOS = 60  # por comando git (clone/push) — mismo motivo
 
 # --- Clasificación de ofertas ---
 DESCUENTO_MINIMO_WEB_PCT = 20  # piso para aparecer en el feed de la web
+# descuentos así de altos suelen ser errores de precio del comercio (más que ofertas reales) —
+# se postean primero (antes que el resto de la corrida, ver main.py) y se avisa aparte al admin
+# por si hay que verificar/comprar rápido antes de que el comercio lo corrija.
+UMBRAL_DESCUENTO_EXTREMO = 90
 # (mínimo %, nombre de canal) — de mayor a menor: canal_para_descuento() devuelve el primer
 # tramo que matchea, así que un descuento de 60%+ cae en "ofertas_vip" y nunca llega al de 40%
 # — cada tramo es exclusivo de su canal, sin duplicar posteos. Sumar un tramo nuevo es agregar

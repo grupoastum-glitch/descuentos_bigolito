@@ -250,11 +250,24 @@ async def _correr() -> None:
     }
 
     todas_candidatas = [oferta for ofertas in ofertas_por_tienda.values() for oferta in ofertas]
+
+    # descuentos así de extremos suelen ser errores de precio del comercio — se postean primero
+    # (no se mezclan con el resto) y se avisa aparte al admin para que pueda verificar/comprar
+    # rápido antes de que el comercio lo corrija.
+    extremas = [o for o in todas_candidatas if o["descuento_pct"] >= config.UMBRAL_DESCUENTO_EXTREMO]
+    resto = [o for o in todas_candidatas if o["descuento_pct"] < config.UMBRAL_DESCUENTO_EXTREMO]
+    for oferta in extremas:
+        await telegram_publisher.avisar_admin(
+            f"🚨 Posible error de precio: {oferta['titulo']} — {oferta['descuento_pct']}% off "
+            f"en {oferta['comercio']}. {oferta['url']}"
+        )
+
     # mezcla tiendas/productos/porcentajes al azar antes de postear — si no, se nota el orden de
     # scrapeo (una tienda entera, categoría por categoría, antes de pasar a la siguiente). No
     # afecta nada aguas abajo: ofertas_por_tienda (usado para confirmar publicaciones más abajo)
     # es una lista aparte, sin mezclar.
-    random.shuffle(todas_candidatas)
+    random.shuffle(resto)
+    todas_candidatas = extremas + resto
     ids_confirmados = await telegram_publisher.publicar_ofertas_nuevas(todas_candidatas)
     for tienda, ofertas in ofertas_por_tienda.items():
         ofertas_writer.confirmar_publicaciones(repo_dir, ofertas, ids_confirmados, tienda)
