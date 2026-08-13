@@ -164,7 +164,7 @@ async def cb_suscribirme_vip(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await _mostrar(
         update,
         context,
-        "Para sumarte al canal VIP necesito tu email (MercadoPago lo pide para cobrar).\n"
+        "Indicá el correo de tu cuenta de MercadoPago (el mismo con el que vas a pagar).\n"
         "Escribilo en tu próximo mensaje 👇",
         teclado,
     )
@@ -225,7 +225,7 @@ async def _procesar_email_vip(update: Update, context: ContextTypes.DEFAULT_TYPE
     # rompería el parseo de Markdown si se interpola sin escapar.
     email_seguro = escape_markdown(email, version=1)
     await _mostrar(
-        update, context, f"¿Tu email es *{email_seguro}*? Lo necesito para el cobro en MercadoPago.", teclado
+        update, context, f"¿Este es el email de tu cuenta de MercadoPago: *{email_seguro}*?", teclado
     )
 
 
