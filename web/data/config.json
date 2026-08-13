@@ -4,15 +4,9 @@
     "emoji": "🐶",
     "saludo": "Hola! 👋",
     "titulo": "¡Bienvenido!",
-    "descripcion": "Únete a nuestra comunidad. Descubre las ofertas antes que tú."
+    "descripcion": "Únete a nuestra comunidad de Telegram y recibe minuto a minuto los mejores descuentos de las principales tiendas de Chile."
   },
   "canales": [
-    {
-      "nombre": "Canal de Chat",
-      "url": "https://t.me/ejemplo_descuentos_chat",
-      "descripcion": "Conversa con la comunidad",
-      "tipo": "comunidad"
-    },
     {
       "nombre": "Descuentos 25%+ 🏷️",
       "url": "https://t.me/descuentos_bigolito",
