@@ -18,11 +18,14 @@ from telegram.error import Conflict
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
+    ChatJoinRequestHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
     filters,
 )
+
+import db
 
 RUTA_CONFIG = Path(__file__).resolve().parent.parent / "web" / "data" / "config.json"
 
@@ -163,6 +166,21 @@ async def mensaje_no_reconocido(update: Update, context: ContextTypes.DEFAULT_TY
     await update.message.reply_text("No entendí ese mensaje 🤔 Usa /start para ver el menú.")
 
 
+async def cb_solicitud_union(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """El link de invitación al canal VIP (pagos/telegram_client.py::invitar) ya no deja entrar
+    directo — pide aprobación a propósito, porque un link "de un solo uso" no verifica quién lo
+    usa (si el suscriptor lo reenvía antes de entrar, cualquiera podría ocupar ese cupo). Acá se
+    aprueba o rechaza comparando la identidad real de quien pide entrar contra su suscripción."""
+    solicitud = update.chat_join_request
+    activo = await db.esta_activo(context.bot_data["db_pool"], solicitud.from_user.id, CANAL_ID_VIP)
+    if activo:
+        await solicitud.approve()
+        log.info("Solicitud de unión aprobada: %s", solicitud.from_user.id)
+    else:
+        await solicitud.decline()
+        log.info("Solicitud de unión rechazada (sin suscripción activa): %s", solicitud.from_user.id)
+
+
 async def manejar_error(_, context: ContextTypes.DEFAULT_TYPE) -> None:
     """PTB ya reintenta solo ante errores de red/Telegram, no hace falta relanzar nada acá.
 
@@ -203,6 +221,11 @@ async def sincronizar_perfil(app: Application) -> None:
     log.info("Perfil del bot sincronizado con config.json")
 
 
+async def _post_init(app: Application) -> None:
+    await sincronizar_perfil(app)
+    app.bot_data["db_pool"] = await db.conectar(app.bot_data["database_url"])
+
+
 def main() -> None:
     load_dotenv(Path(__file__).resolve().parent / ".env")
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -219,7 +242,12 @@ def main() -> None:
             "MERCADOPAGO_SUSCRIPCION_FRECUENCIA o MERCADOPAGO_SUSCRIPCION_FRECUENCIA_TIPO en bot/.env"
         )
 
-    app = Application.builder().token(token).post_init(sincronizar_perfil).build()
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        raise SystemExit("Falta DATABASE_URL en bot/.env")
+
+    app = Application.builder().token(token).post_init(_post_init).build()
+    app.bot_data["database_url"] = database_url
     app.bot_data["mp_sdk"] = mercadopago.SDK(mp_access_token)
     app.bot_data["mp_monto"] = int(mp_monto)
     app.bot_data["mp_frecuencia"] = int(mp_frecuencia)
@@ -228,6 +256,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(cb_informacion, pattern="^informacion$"))
     app.add_handler(CallbackQueryHandler(cb_suscribirme_vip, pattern="^suscribirme_vip$"))
+    app.add_handler(ChatJoinRequestHandler(cb_solicitud_union))
     app.add_handler(MessageHandler(filters.COMMAND | filters.TEXT, mensaje_no_reconocido))
     app.add_error_handler(manejar_error)
 

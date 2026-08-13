@@ -10,6 +10,7 @@ COPY bot/requirements.txt bot/requirements.txt
 RUN pip install --no-cache-dir -r bot/requirements.txt
 
 COPY bot/bot.py bot/bot.py
+COPY bot/db.py bot/db.py
 COPY web/data/ web/data/
 
 WORKDIR /app/bot
