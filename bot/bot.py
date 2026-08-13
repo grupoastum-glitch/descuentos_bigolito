@@ -153,21 +153,42 @@ async def cb_volver_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def cb_suscribirme_vip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Primer paso del flujo de suscripción: MercadoPago exige el email del pagador para crear
-    la preapproval (no alcanza con el user_id de Telegram) — se lo pedimos acá y se procesa en
-    el próximo mensaje de texto (ver mensaje_no_reconocido, que revisa este estado primero)."""
+    la preapproval (no alcanza con el user_id de Telegram). Si ya hay un email guardado de una
+    suscripción anterior, se salta directo a confirmarlo; si no, se pide acá y se procesa en el
+    próximo mensaje de texto (ver mensaje_no_reconocido, que revisa ese estado primero)."""
     query = update.callback_query
     await query.answer()
-    context.user_data["esperando_email_vip"] = True
     config = cargar_config()
     vip = config.get("vip") or {}
     intro = f"👑 {vip['descripcion']}\n\n" if vip.get("descripcion") else ""
+
+    # Si ya se suscribió antes con éxito, se saltea pedir el email de nuevo — se reusa la misma
+    # pantalla de confirmación que el flujo normal (cb_confirmar_email_vip/cb_reescribir_email_vip).
+    telegram_user_id = update.effective_user.id
+    email_conocido = await db.obtener_email(context.bot_data["db_pool"], telegram_user_id, CANAL_ID_VIP)
+    if email_conocido:
+        context.user_data["esperando_email_vip"] = False
+        context.user_data["email_vip_pendiente"] = email_conocido
+        email_seguro = escape_markdown(email_conocido, version=1)
+        teclado = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Sí, continuar", callback_data="confirmar_email_vip")],
+            [InlineKeyboardButton("✏️ Usar otro correo", callback_data="reescribir_email_vip")],
+            [InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")],
+        ])
+        await _mostrar(
+            update, context, f"{intro}¿Seguís usando tu correo de MercadoPago: *{email_seguro}*?", teclado
+        )
+        return
+
+    context.user_data["esperando_email_vip"] = True
     teclado = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")]])
     await _mostrar(
         update,
         context,
         f"{intro}El pago es 100% seguro con MercadoPago y podés cancelar cuando quieras.\n\n"
         "Indicá el correo de tu cuenta de MercadoPago (el mismo con el que vas a pagar).\n"
-        "Escribilo en tu próximo mensaje 👇",
+        "¿No te acordás? Abrí la app de MercadoPago → tocá tu perfil (el ícono de arriba) → "
+        "ahí aparece tu email.\n\nEscribilo en tu próximo mensaje 👇",
         teclado,
     )
 
@@ -262,7 +283,12 @@ async def cb_reescribir_email_vip(update: Update, context: ContextTypes.DEFAULT_
     context.user_data.pop("email_vip_pendiente", None)
     context.user_data["esperando_email_vip"] = True
     teclado = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")]])
-    await _mostrar(update, context, "Dale, escribí tu email de nuevo:", teclado)
+    await _mostrar(
+        update, context,
+        "Dale, escribí tu email de nuevo. Lo encontrás en la app de MercadoPago, en tu perfil "
+        "(el ícono de arriba).",
+        teclado,
+    )
 
 
 async def mensaje_no_reconocido(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

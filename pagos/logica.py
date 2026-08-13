@@ -79,7 +79,7 @@ async def aplicar_estado_preapproval(pool: asyncpg.Pool, preapproval: dict) -> N
         return
 
     es_nueva_activacion = await db.upsert_suscripcion(
-        pool, telegram_user_id, canal_id, preapproval["id"], estado,
+        pool, telegram_user_id, canal_id, preapproval["id"], estado, preapproval.get("payer_email"),
     )
 
     if estado == "activa":

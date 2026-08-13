@@ -33,6 +33,10 @@ CREATE INDEX IF NOT EXISTS ix_suscripciones_estado ON suscripciones (estado);
 -- MercadoPago reenvía el mismo webhook de cobro.
 ALTER TABLE suscripciones ADD COLUMN IF NOT EXISTS acceso_hasta TIMESTAMPTZ;
 ALTER TABLE suscripciones ADD COLUMN IF NOT EXISTS ultimo_invoice_id TEXT;
+
+-- último email de MercadoPago que funcionó para esta persona en este canal — permite no volver a
+-- pedirlo en una renovación futura (ver bot/db.py::obtener_email).
+ALTER TABLE suscripciones ADD COLUMN IF NOT EXISTS payer_email TEXT;
 """
 
 _pool: asyncpg.Pool | None = None
@@ -62,11 +66,15 @@ async def upsert_suscripcion(
     canal_id: str,
     mercadopago_preapproval_id: str,
     estado: str,
+    payer_email: str | None = None,
 ) -> bool:
     """Crea o actualiza la suscripción de (telegram_user_id, canal_id). Devuelve True si esta
     llamada es la que activa el acceso por primera vez (fila nueva, o pasa de un estado que no
     era 'activa' a 'activa') — el caller usa esto para decidir si hay que mandar la invitación
-    al canal (ver pagos/webhook.py). Una renovación que ya estaba activa devuelve False."""
+    al canal (ver pagos/webhook.py). Una renovación que ya estaba activa devuelve False.
+
+    payer_email es opcional: si el caller no lo tiene a mano (ej. algún camino que no venga de
+    aplicar_estado_preapproval), COALESCE conserva el que ya hubiera guardado en vez de borrarlo."""
     ahora = datetime.now(timezone.utc)
     async with pool.acquire() as con:
         async with con.transaction():
@@ -76,13 +84,14 @@ async def upsert_suscripcion(
             )
             await con.execute(
                 """INSERT INTO suscripciones
-                       (telegram_user_id, canal_id, mercadopago_preapproval_id, estado, fecha_inicio, ultima_actualizacion)
-                   VALUES ($1, $2, $3, $4, $5, $5)
+                       (telegram_user_id, canal_id, mercadopago_preapproval_id, estado, fecha_inicio, ultima_actualizacion, payer_email)
+                   VALUES ($1, $2, $3, $4, $5, $5, $6)
                    ON CONFLICT (telegram_user_id, canal_id) DO UPDATE SET
                        mercadopago_preapproval_id = EXCLUDED.mercadopago_preapproval_id,
                        estado = EXCLUDED.estado,
-                       ultima_actualizacion = EXCLUDED.ultima_actualizacion""",
-                telegram_user_id, canal_id, mercadopago_preapproval_id, estado, ahora,
+                       ultima_actualizacion = EXCLUDED.ultima_actualizacion,
+                       payer_email = COALESCE(EXCLUDED.payer_email, suscripciones.payer_email)""",
+                telegram_user_id, canal_id, mercadopago_preapproval_id, estado, ahora, payer_email,
             )
     era_activa = anterior is not None and anterior["estado"] == "activa"
     return estado == "activa" and not era_activa
