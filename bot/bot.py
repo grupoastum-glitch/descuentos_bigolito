@@ -14,7 +14,8 @@ from pathlib import Path
 import mercadopago
 from dotenv import load_dotenv
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.error import Conflict, TelegramError
+from telegram.error import BadRequest, Conflict, TelegramError
+from telegram.helpers import escape_markdown
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -99,11 +100,36 @@ def texto_informacion(config: dict) -> str:
 # ------------------------------ comandos ------------------------------
 
 
-async def cmd_start(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+async def _mostrar(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, texto: str, teclado: InlineKeyboardMarkup | None
+) -> None:
+    """Transforma el mensaje del flujo de menú/VIP en vez de acumular mensajes nuevos.
+
+    Si el update viene de un botón (callback_query), edita ese mismo mensaje — es el que el
+    usuario acaba de tocar. Si viene de texto libre (ej. el email), edita el último mensaje del
+    flujo rastreado en user_data["menu_msg_id"], porque no hay un mensaje "tocado" al que
+    referirse. Si no hay nada que editar o falla (mensaje borrado, con más de 48hs, o ya tiene
+    exactamente ese contenido — típico de un doble clic), manda un mensaje nuevo y lo deja
+    rastreado para el próximo paso, para no dejar al usuario sin respuesta."""
+    chat_id = update.effective_chat.id
+    query = update.callback_query
+    msg_id = query.message.message_id if query else context.user_data.get("menu_msg_id")
+    if msg_id:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id, message_id=msg_id, text=texto, parse_mode="Markdown", reply_markup=teclado
+            )
+            context.user_data["menu_msg_id"] = msg_id
+            return
+        except BadRequest:
+            pass
+    nuevo = await context.bot.send_message(chat_id=chat_id, text=texto, parse_mode="Markdown", reply_markup=teclado)
+    context.user_data["menu_msg_id"] = nuevo.message_id
+
+
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     config = cargar_config()
-    await update.message.reply_text(
-        texto_bienvenida(config), parse_mode="Markdown", reply_markup=teclado_inicio(config)
-    )
+    await _mostrar(update, context, texto_bienvenida(config), teclado_inicio(config))
 
 
 async def cb_volver_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -114,19 +140,17 @@ async def cb_volver_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     context.user_data["esperando_email_vip"] = False
     context.user_data.pop("email_vip_pendiente", None)
     config = cargar_config()
-    await query.message.reply_text(
-        texto_bienvenida(config), parse_mode="Markdown", reply_markup=teclado_inicio(config)
-    )
+    await _mostrar(update, context, texto_bienvenida(config), teclado_inicio(config))
 
 
-async def cb_informacion(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+async def cb_informacion(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     config = cargar_config()
     teclado = InlineKeyboardMarkup(
         [[InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")]]
     )
-    await query.message.reply_text(texto_informacion(config), parse_mode="Markdown", reply_markup=teclado)
+    await _mostrar(update, context, texto_informacion(config), teclado)
 
 
 async def cb_suscribirme_vip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -137,10 +161,12 @@ async def cb_suscribirme_vip(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     context.user_data["esperando_email_vip"] = True
     teclado = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")]])
-    await query.message.reply_text(
+    await _mostrar(
+        update,
+        context,
         "Para sumarte al canal VIP necesito tu email (MercadoPago lo pide para cobrar).\n"
         "Escribilo en tu próximo mensaje 👇",
-        reply_markup=teclado,
+        teclado,
     )
 
 
@@ -185,7 +211,7 @@ async def _procesar_email_vip(update: Update, context: ContextTypes.DEFAULT_TYPE
     email = (update.message.text or "").strip()
     if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
         teclado = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")]])
-        await update.message.reply_text("Ese email no es válido 🤔 Probá escribirlo de nuevo:", reply_markup=teclado)
+        await _mostrar(update, context, "Ese email no es válido 🤔 Probá escribirlo de nuevo:", teclado)
         return
 
     context.user_data["esperando_email_vip"] = False
@@ -195,10 +221,11 @@ async def _procesar_email_vip(update: Update, context: ContextTypes.DEFAULT_TYPE
         [InlineKeyboardButton("✏️ Escribir de nuevo", callback_data="reescribir_email_vip")],
         [InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")],
     ])
-    await update.message.reply_text(
-        f"¿Tu email es *{email}*? Lo necesito para el cobro en MercadoPago.",
-        parse_mode="Markdown",
-        reply_markup=teclado,
+    # escape_markdown: el email es texto libre del usuario, y un "_" o "*" (común en emails)
+    # rompería el parseo de Markdown si se interpola sin escapar.
+    email_seguro = escape_markdown(email, version=1)
+    await _mostrar(
+        update, context, f"¿Tu email es *{email_seguro}*? Lo necesito para el cobro en MercadoPago.", teclado
     )
 
 
@@ -212,24 +239,19 @@ async def cb_confirmar_email_vip(update: Update, context: ContextTypes.DEFAULT_T
         teclado = InlineKeyboardMarkup(
             [[InlineKeyboardButton("👑 Suscribirme al VIP", callback_data="suscribirme_vip")]]
         )
-        await query.message.reply_text(
-            "Esta confirmación ya venció. Empecemos de nuevo:", reply_markup=teclado
-        )
+        await _mostrar(update, context, "Esta confirmación ya venció. Empecemos de nuevo:", teclado)
         return
 
     telegram_user_id = update.effective_user.id
     init_point = await _crear_preapproval(telegram_user_id, email, context)
     if not init_point:
-        await query.message.reply_text(
-            "No pudimos generar el link de pago. Probá de nuevo:",
-            reply_markup=teclado_error_preapproval(),
+        await _mostrar(
+            update, context, "No pudimos generar el link de pago. Probá de nuevo:", teclado_error_preapproval()
         )
         return
 
     teclado = InlineKeyboardMarkup([[InlineKeyboardButton("💳 Pagar suscripción", url=init_point)]])
-    await query.message.reply_text(
-        "Listo 🙌 Tocá el botón para completar el pago y activar tu VIP:", reply_markup=teclado
-    )
+    await _mostrar(update, context, "Listo 🙌 Tocá el botón para completar el pago y activar tu VIP:", teclado)
 
 
 async def cb_reescribir_email_vip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -238,7 +260,7 @@ async def cb_reescribir_email_vip(update: Update, context: ContextTypes.DEFAULT_
     context.user_data.pop("email_vip_pendiente", None)
     context.user_data["esperando_email_vip"] = True
     teclado = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")]])
-    await query.message.reply_text("Dale, escribí tu email de nuevo:", reply_markup=teclado)
+    await _mostrar(update, context, "Dale, escribí tu email de nuevo:", teclado)
 
 
 async def mensaje_no_reconocido(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -246,7 +268,7 @@ async def mensaje_no_reconocido(update: Update, context: ContextTypes.DEFAULT_TY
         await _procesar_email_vip(update, context)
         return
     teclado = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")]])
-    await update.message.reply_text("No entendí ese mensaje 🤔", reply_markup=teclado)
+    await _mostrar(update, context, "No entendí ese mensaje 🤔", teclado)
 
 
 async def cb_solicitud_union(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
