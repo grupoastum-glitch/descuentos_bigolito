@@ -195,6 +195,19 @@ async def cb_solicitud_union(update: Update, context: ContextTypes.DEFAULT_TYPE)
     else:
         await solicitud.decline()
         log.info("Solicitud de unión rechazada (sin suscripción activa): %s", solicitud.from_user.id)
+        try:
+            await context.bot.send_message(
+                chat_id=solicitud.from_user.id,
+                text=(
+                    "No pudimos darte acceso al canal VIP: no encontramos una suscripción activa "
+                    "a tu nombre. Si ya pagaste y creés que es un error, escribinos. Si querés "
+                    "suscribirte, usá /start y tocá el botón VIP 👑."
+                ),
+            )
+        except TelegramError:
+            log.exception(
+                "No se pudo avisar por DM a %s que su solicitud fue rechazada", solicitud.from_user.id,
+            )
 
 
 async def manejar_error(_, context: ContextTypes.DEFAULT_TYPE) -> None:
