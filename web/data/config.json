@@ -29,7 +29,7 @@
     "url": "https://t.me/nicolass94588"
   },
   "bot": {
-    "descripcion_larga": "¡Hola! 👋 Soy el bot de Descuentos Bigolito 🐶, tu acceso directo a los mejores descuentos, cupones y ofertas del día.\n\n📢 Canal gratis: descuentos 25% al 49%.\n👑 Descuentos VIP: descuentos 50% o más, por $3.000/mes.\n\nEscribe /start para ver el menú completo.",
+    "descripcion_larga": "🐶 ¡Guau! Soy Bigolito, el beagle cazador de descuentos. Olfateo las mejores ofertas de Chile antes que nadie y te las traigo directo a Telegram.\n\nEscribe /start para empezar a ahorrar.",
     "descripcion_corta": "Bot oficial de Descuentos Bigolito 🐶 — descubre las ofertas antes que tú.",
     "comandos": []
   }
