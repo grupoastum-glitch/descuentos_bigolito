@@ -22,9 +22,11 @@ _ESTADO_POR_STATUS_MP = {
     "cancelled": "cancelada",
 }
 
-# A confirmar contra un pago real (ver PLAN_periodo_gracia_cancelacion.md) — el log de debug en
-# aplicar_pago_recurrente queda a propósito hasta confirmar este valor con la próxima recarga.
-_STATUS_INVOICE_APROBADO = "approved"
+# Confirmado contra un pago real de prueba (ver PLAN_periodo_gracia_cancelacion.md): el "status"
+# del invoice en sí (ej. "processed") describe el intento de cobro, no si salió bien — el
+# resultado real está en el objeto "payment" anidado, con status "approved" (status_detail
+# "accredited" en el caso exitoso).
+_STATUS_PAGO_APROBADO = "approved"
 
 
 def _periodo_de(auto_recurring: dict) -> timedelta:
@@ -97,13 +99,15 @@ async def aplicar_pago_recurrente(pool: asyncpg.Pool, invoice: dict) -> None:
     """Traduce un cobro recurrente confirmado (invoice/authorized_payment) en una extensión del
     acceso pagado. Se dispara desde el webhook de topic 'subscription_authorized_payment', que
     antes se ignoraba por completo."""
-    log.info("Invoice recibido (debug, sacar tras confirmar el campo 'status'): %r", invoice)
-
     # normalizado a str: el SDK puede devolver "id" como int, y la columna ultimo_invoice_id es
     # TEXT — sin esto, la comparación de reenvío de abajo nunca matchea.
     invoice_id = str(invoice["id"]) if invoice.get("id") is not None else None
 
-    if invoice.get("status") != _STATUS_INVOICE_APROBADO:
+    if invoice.get("payment", {}).get("status") != _STATUS_PAGO_APROBADO:
+        log.info(
+            "Invoice %s sin pago aprobado todavía (payment.status=%r) — sin acción.",
+            invoice_id, invoice.get("payment", {}).get("status"),
+        )
         return
 
     preapproval_id = invoice.get("preapproval_id")
