@@ -73,8 +73,9 @@ def teclado_inicio(config: dict) -> InlineKeyboardMarkup | None:
     if vip:
         # el canal VIP es privado y pago (ver PLAN_canal_vip_mercadopago.md) — el botón dispara
         # el flujo de suscripción (pide email, genera el link de pago de MercadoPago) en vez de
-        # linkear directo al canal como antes. La web sigue usando vip["url"] para su propio
-        # botón — ese lado queda pendiente aparte, no lo toca este cambio.
+        # linkear directo al canal. La web usa vip["url"] para su propio botón VIP, pero apunta
+        # al bot (mismo flujo), no al canal directo — el canal exige creates_join_request y
+        # rechazaría a cualquiera sin suscripción activa (ver cb_solicitud_union).
         filas.append([InlineKeyboardButton(f"{vip['nombre']} 👑", callback_data="suscribirme_vip")])
     if contacto and contacto.get("url"):
         filas.append([InlineKeyboardButton("Háblame 💬", url=contacto["url"])])
