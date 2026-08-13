@@ -96,9 +96,9 @@ Está todo en un solo sitio, cerca del inicio del archivo:
 
 ### 3. Logo e imágenes → `images/`
 
-Reemplaza manteniendo los nombres: `logo.svg` (favicon), `icono-192.png` e `icono-512.png`
-(PWA) y `og-image.png` (1200×630, es la miniatura al compartir el enlace en Telegram o
-WhatsApp).
+Reemplaza manteniendo los nombres: `icono-192.png` (favicon y PWA) e `icono-512.png` (PWA)
+y `og-image.png` (1200×630, es la miniatura al compartir el enlace en Telegram o WhatsApp).
+`logo.svg` quedó sin uso (era el placeholder original).
 
 ### 4. Textos de la cabecera y del `<title>`
 
