@@ -4,7 +4,11 @@ VIP en bot.py::cb_solicitud_union, comparando la identidad de quien pide entrar 
 real de su suscripción."""
 from __future__ import annotations
 
+import logging
+
 import asyncpg
+
+log = logging.getLogger("bot.db")
 
 _pool: asyncpg.Pool | None = None
 
@@ -16,6 +20,7 @@ async def conectar(database_url: str) -> asyncpg.Pool:
     global _pool
     if _pool is None:
         _pool = await asyncpg.create_pool(database_url, min_size=1, max_size=3)
+        log.info("Pool de PostgreSQL conectado.")
     return _pool
 
 
