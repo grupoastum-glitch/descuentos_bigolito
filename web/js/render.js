@@ -18,6 +18,9 @@ const TARJETA =
   'aparecer rounded-3xl bg-white dark:bg-superficie border border-gray-200 ' +
   'dark:border-white/5 shadow-sm p-4';
 
+const TARJETA_VIP =
+  'aparecer rounded-3xl bg-white dark:bg-superficie border-2 border-vip shadow-sm shadow-vip/20 p-4';
+
 function crear(etiqueta, clases, contenido) {
   const nodo = document.createElement(etiqueta);
   if (clases) nodo.className = clases;
@@ -223,7 +226,8 @@ function bloqueCupon(cupon) {
 /* ------------------------------ ofertas ------------------------------ */
 
 function tarjetaOferta(oferta) {
-  const tarjeta = crear('article', TARJETA);
+  const esVip = oferta.canal === 'ofertas_vip';
+  const tarjeta = crear('article', esVip ? TARJETA_VIP : TARJETA);
 
   const cabecera = crear('div', 'flex items-start justify-between gap-3');
   const izquierda = crear('div', 'flex-1 min-w-0');
@@ -257,14 +261,25 @@ function tarjetaOferta(oferta) {
   cabecera.append(izquierda);
 
   if (oferta.descuento) {
-    cabecera.append(
+    const insignias = crear('div', 'shrink-0 flex flex-col items-end gap-1');
+    insignias.append(
       crear(
         'div',
-        'shrink-0 px-3 py-1.5 rounded-xl bg-marca/10 dark:bg-marca/20 text-marca ' +
+        'px-3 py-1.5 rounded-xl bg-marca/10 dark:bg-marca/20 text-marca ' +
           'dark:text-marca-claro font-black text-sm whitespace-nowrap',
         oferta.descuento
       )
     );
+    if (esVip) {
+      insignias.append(
+        crear(
+          'span',
+          'px-2 py-0.5 rounded-full bg-vip text-vip-texto text-[10px] font-black tracking-wide',
+          'VIP'
+        )
+      );
+    }
+    cabecera.append(insignias);
   }
   tarjeta.append(cabecera);
 

@@ -209,7 +209,14 @@ async def construir_feed_web(repo_dir: Path, pool: asyncpg.Pool) -> None:
     ahora = _ahora_iso()
     nombre_por_tienda_id = {tienda.id: tienda.nombre for tienda in config.TIENDAS}
 
-    filas = await db.feed_activo(pool, config.DESCUENTO_MINIMO_WEB_PCT, config.MAX_OFERTAS_WEB_TEASER)
+    umbral_vip = config.TIERS_DESCUENTO[0][0]  # tramo más alto de la lista (mayor a menor) = VIP
+    filas = await db.feed_activo(
+        pool,
+        config.DESCUENTO_MINIMO_WEB_PCT,
+        umbral_vip,
+        config.MAX_OFERTAS_WEB_TEASER - config.MAX_OFERTAS_VIP_WEB_TEASER,
+        config.MAX_OFERTAS_VIP_WEB_TEASER,
+    )
     feed = [{
         "id": fila["id"],
         "titulo": fila["titulo"],

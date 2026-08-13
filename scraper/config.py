@@ -150,3 +150,6 @@ TIENDAS = [
 # puerta de entrada a Telegram, no un reemplazo de los canales. Mostrar solo una muestra
 # chica es lo que le da sentido a unirse al canal para ver el resto.
 MAX_OFERTAS_WEB_TEASER = 8
+MAX_OFERTAS_VIP_WEB_TEASER = 2  # de las 8 totales, cuántas como máximo pueden ser del tramo VIP
+# (50%+) — evita que ofertas VIP, que suelen salir en tandas, le ganen el lugar a las gratis en
+# el teaser de la web. Ver feed_activo() en db.py.

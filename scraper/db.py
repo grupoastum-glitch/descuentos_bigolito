@@ -164,14 +164,26 @@ async def insertar_evento_historial(
         )
 
 
-async def feed_activo(pool: asyncpg.Pool, descuento_minimo: int, limite: int) -> list[dict]:
-    """Reemplaza el loop por tienda de construir_feed_web(): una sola query trae ya
-    ordenado/truncado lo que hace falta para el feed."""
+async def feed_activo(
+    pool: asyncpg.Pool, descuento_minimo: int, umbral_vip: int, limite_gratis: int, limite_vip: int
+) -> list[dict]:
+    """Arma el teaser priorizando el tramo gratis: trae hasta `limite_gratis` de por debajo del
+    umbral VIP y hasta `limite_vip` del tramo VIP por separado, para que las VIP (que suelen
+    salir en tandas) no le ganen el lugar a las gratis — ver MAX_OFERTAS_VIP_WEB_TEASER en
+    config.py. Se combinan y reordenan por fecha para el feed final."""
+    columnas = "id, tienda_id, titulo, descuento_pct, url, imagen, primera_deteccion"
     async with pool.acquire() as con:
-        filas = await con.fetch(
-            """SELECT id, tienda_id, titulo, descuento_pct, url, imagen, primera_deteccion
-               FROM productos WHERE activo = TRUE AND descuento_pct >= $1
-               ORDER BY primera_deteccion DESC LIMIT $2""",
-            descuento_minimo, limite,
+        gratis = await con.fetch(
+            f"""SELECT {columnas} FROM productos
+                WHERE activo = TRUE AND descuento_pct >= $1 AND descuento_pct < $2
+                ORDER BY primera_deteccion DESC LIMIT $3""",
+            descuento_minimo, umbral_vip, limite_gratis,
         )
+        vip = await con.fetch(
+            f"""SELECT {columnas} FROM productos
+                WHERE activo = TRUE AND descuento_pct >= $1
+                ORDER BY primera_deteccion DESC LIMIT $2""",
+            umbral_vip, limite_vip,
+        )
+    filas = sorted([*gratis, *vip], key=lambda f: f["primera_deteccion"], reverse=True)
     return [dict(f) for f in filas]
