@@ -35,12 +35,13 @@ async def invitar(telegram_user_id: int, canal_id: str) -> None:
             expire_date=datetime.now(timezone.utc) + timedelta(hours=24),
         )
         try:
+            teclado = InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🔓 Entrar al canal VIP", url=invite.invite_link)]]
+            )
             await bot.send_message(
                 chat_id=telegram_user_id,
-                text=(
-                    "✅ ¡Pago confirmado! Acá está tu invitación al canal VIP "
-                    "(válida solo para vos, un solo uso):\n" + invite.invite_link
-                ),
+                text="✅ ¡Pago confirmado! Tocá el botón para entrar al canal VIP (invitación válida solo para vos):",
+                reply_markup=teclado,
             )
         except TelegramError:
             log.exception(

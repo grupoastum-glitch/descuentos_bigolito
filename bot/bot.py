@@ -81,10 +81,19 @@ def teclado_inicio(config: dict) -> InlineKeyboardMarkup | None:
     return InlineKeyboardMarkup(filas) if filas else None
 
 
+def texto_bienvenida(config: dict) -> str:
+    marca = config["marca"]
+    nombre = " ".join(filter(None, [marca.get("nombre"), marca.get("emoji")]))
+    return f"{marca.get('saludo', '')}\n\nSoy el bot de *{nombre}*. {marca.get('descripcion', '')}"
+
+
 def texto_informacion(config: dict) -> str:
     marca = config["marca"]
     nombre = " ".join(filter(None, [marca.get("nombre"), marca.get("emoji")]))
-    return f"*{nombre}*\n\n{marca.get('descripcion', '')}\n\nToca 🆘 Ayuda en el menú si necesitas hablar con nosotros."
+    texto = f"*{nombre}*\n\n{marca.get('descripcion', '')}"
+    if config.get("contacto"):
+        texto += "\n\nToca 💬 Háblame en el menú si necesitas hablar con nosotros."
+    return texto
 
 
 # ------------------------------ comandos ------------------------------
@@ -92,18 +101,32 @@ def texto_informacion(config: dict) -> str:
 
 async def cmd_start(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     config = cargar_config()
-    marca = config["marca"]
-    nombre = " ".join(filter(None, [marca.get("nombre"), marca.get("emoji")]))
+    await update.message.reply_text(
+        texto_bienvenida(config), parse_mode="Markdown", reply_markup=teclado_inicio(config)
+    )
 
-    texto = f"{marca.get('saludo', '')}\n\nSoy el bot de *{nombre}*. {marca.get('descripcion', '')}"
-    await update.message.reply_text(texto, parse_mode="Markdown", reply_markup=teclado_inicio(config))
+
+async def cb_volver_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Vuelve al menú principal y limpia cualquier estado de flujo en curso (email VIP pendiente
+    de escribir o de confirmar) — mismo callback_data se reusa como "Cancelar" en esos flujos."""
+    query = update.callback_query
+    await query.answer()
+    context.user_data["esperando_email_vip"] = False
+    context.user_data.pop("email_vip_pendiente", None)
+    config = cargar_config()
+    await query.message.reply_text(
+        texto_bienvenida(config), parse_mode="Markdown", reply_markup=teclado_inicio(config)
+    )
 
 
 async def cb_informacion(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     config = cargar_config()
-    await query.message.reply_text(texto_informacion(config), parse_mode="Markdown")
+    teclado = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")]]
+    )
+    await query.message.reply_text(texto_informacion(config), parse_mode="Markdown", reply_markup=teclado)
 
 
 async def cb_suscribirme_vip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -113,20 +136,16 @@ async def cb_suscribirme_vip(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
     context.user_data["esperando_email_vip"] = True
+    teclado = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")]])
     await query.message.reply_text(
-        "Para suscribirte al canal VIP necesito tu email (MercadoPago lo pide para el cobro).\n"
-        "Escribilo en tu próximo mensaje:"
+        "Para sumarte al canal VIP necesito tu email (MercadoPago lo pide para cobrar).\n"
+        "Escribilo en tu próximo mensaje 👇",
+        reply_markup=teclado,
     )
 
 
-async def _procesar_email_vip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    email = (update.message.text or "").strip()
-    if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
-        await update.message.reply_text("Ese no parece un email válido. Escribilo de nuevo:")
-        return
-    context.user_data["esperando_email_vip"] = False
-
-    telegram_user_id = update.effective_user.id
+async def _crear_preapproval(telegram_user_id: int, email: str, context: ContextTypes.DEFAULT_TYPE) -> str | None:
+    """Crea la preapproval en MercadoPago y devuelve el init_point, o None si falló (ya logueado)."""
     try:
         # Sin preapproval_plan_id a propósito: esa variante exige card_token_id (tarjeta
         # tokenizada de antemano, pensado para un checkout propio) y no genera un init_point
@@ -148,22 +167,86 @@ async def _procesar_email_vip(update: Update, context: ContextTypes.DEFAULT_TYPE
         resultado.raise_for_status()
     except Exception:
         log.exception("Falló la creación de preapproval para %s", telegram_user_id)
-        await update.message.reply_text(
-            "Hubo un problema generando el link de pago. Probá de nuevo más tarde."
+        return None
+    return resultado["response"]["init_point"]
+
+
+def teclado_error_preapproval() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔁 Reintentar", callback_data="suscribirme_vip")],
+        [InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")],
+    ])
+
+
+async def _procesar_email_vip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Valida el formato del email y pide confirmación antes de generar el cobro — es el único
+    punto del bot donde el usuario escribe texto libre, así que confirmar antes de llamar a
+    MercadoPago evita que un typo mande el link de pago a un email equivocado."""
+    email = (update.message.text or "").strip()
+    if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
+        teclado = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")]])
+        await update.message.reply_text("Ese email no es válido 🤔 Probá escribirlo de nuevo:", reply_markup=teclado)
+        return
+
+    context.user_data["esperando_email_vip"] = False
+    context.user_data["email_vip_pendiente"] = email
+    teclado = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Sí, confirmar", callback_data="confirmar_email_vip")],
+        [InlineKeyboardButton("✏️ Escribir de nuevo", callback_data="reescribir_email_vip")],
+        [InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")],
+    ])
+    await update.message.reply_text(
+        f"¿Tu email es *{email}*? Lo necesito para el cobro en MercadoPago.",
+        parse_mode="Markdown",
+        reply_markup=teclado,
+    )
+
+
+async def cb_confirmar_email_vip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    # .pop() en vez de .get(): un doble clic no encuentra email la segunda vez, evitando
+    # generar dos preapprovals para el mismo pago.
+    email = context.user_data.pop("email_vip_pendiente", None)
+    if not email:
+        teclado = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("👑 Suscribirme al VIP", callback_data="suscribirme_vip")]]
+        )
+        await query.message.reply_text(
+            "Esta confirmación ya venció. Empecemos de nuevo:", reply_markup=teclado
         )
         return
 
-    init_point = resultado["response"]["init_point"]
-    await update.message.reply_text(
-        "Listo, completá el pago acá para activar tu suscripción VIP:\n" + init_point
+    telegram_user_id = update.effective_user.id
+    init_point = await _crear_preapproval(telegram_user_id, email, context)
+    if not init_point:
+        await query.message.reply_text(
+            "No pudimos generar el link de pago. Probá de nuevo:",
+            reply_markup=teclado_error_preapproval(),
+        )
+        return
+
+    teclado = InlineKeyboardMarkup([[InlineKeyboardButton("💳 Pagar suscripción", url=init_point)]])
+    await query.message.reply_text(
+        "Listo 🙌 Tocá el botón para completar el pago y activar tu VIP:", reply_markup=teclado
     )
+
+
+async def cb_reescribir_email_vip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    context.user_data.pop("email_vip_pendiente", None)
+    context.user_data["esperando_email_vip"] = True
+    teclado = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")]])
+    await query.message.reply_text("Dale, escribí tu email de nuevo:", reply_markup=teclado)
 
 
 async def mensaje_no_reconocido(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if context.user_data.get("esperando_email_vip"):
         await _procesar_email_vip(update, context)
         return
-    await update.message.reply_text("No entendí ese mensaje 🤔 Usa /start para ver el menú.")
+    teclado = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")]])
+    await update.message.reply_text("No entendí ese mensaje 🤔", reply_markup=teclado)
 
 
 async def cb_solicitud_union(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -184,8 +267,11 @@ async def cb_solicitud_union(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await context.bot.send_message(
                 chat_id=solicitud.from_user.id,
                 text=(
-                    "✅ ¡Listo, tu solicitud fue aprobada! Si Telegram no te abrió el canal solo, "
-                    "tocá de nuevo el link que te mandamos para entrar."
+                    "✅ ¡Listo! Tu solicitud fue aprobada. Si Telegram no te abrió el canal solo, "
+                    "tocá de nuevo el link que te mandamos."
+                ),
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")]]
                 ),
             )
         except TelegramError:
@@ -199,9 +285,11 @@ async def cb_solicitud_union(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await context.bot.send_message(
                 chat_id=solicitud.from_user.id,
                 text=(
-                    "No pudimos darte acceso al canal VIP: no encontramos una suscripción activa "
-                    "a tu nombre. Si ya pagaste y creés que es un error, escribinos. Si querés "
-                    "suscribirte, usá /start y tocá el botón VIP 👑."
+                    "No pudimos darte acceso: no encontramos una suscripción activa a tu nombre. "
+                    "Si ya pagaste y creés que es un error, escribinos. Si no, sumate al VIP acá:"
+                ),
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("👑 Suscribirme al VIP", callback_data="suscribirme_vip")]]
                 ),
             )
         except TelegramError:
@@ -285,6 +373,9 @@ def main() -> None:
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(cb_informacion, pattern="^informacion$"))
     app.add_handler(CallbackQueryHandler(cb_suscribirme_vip, pattern="^suscribirme_vip$"))
+    app.add_handler(CallbackQueryHandler(cb_confirmar_email_vip, pattern="^confirmar_email_vip$"))
+    app.add_handler(CallbackQueryHandler(cb_reescribir_email_vip, pattern="^reescribir_email_vip$"))
+    app.add_handler(CallbackQueryHandler(cb_volver_menu, pattern="^volver_menu$"))
     app.add_handler(ChatJoinRequestHandler(cb_solicitud_union))
     app.add_handler(MessageHandler(filters.COMMAND | filters.TEXT, mensaje_no_reconocido))
     app.add_error_handler(manejar_error)
