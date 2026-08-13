@@ -98,19 +98,30 @@ export function tiempoRelativo(isoFecha) {
 function botonCanal(canal) {
   const boton = enlaceExterno(canal.url);
   boton.className = PILDORA;
-  boton.textContent = canal.nombre;
-  if (canal.descripcion) boton.title = canal.descripcion;
+  boton.append(crear('span', 'block', canal.nombre));
+  if (canal.descripcion) {
+    boton.append(
+      crear(
+        'span',
+        'block mt-0.5 text-xs font-normal text-gray-500 dark:text-neutral-400',
+        canal.descripcion
+      )
+    );
+  }
   return boton;
 }
 
 function botonVip(vip) {
   const boton = enlaceExterno(vip.url);
   boton.className =
-    'relative flex items-center justify-center w-full py-4 mt-2 bg-vip ' +
-    'hover:brightness-95 text-vip-texto font-bold rounded-full transition ' +
+    'relative flex flex-col items-center justify-center w-full py-4 pl-6 pr-16 mt-2 ' +
+    'text-center bg-vip hover:brightness-95 text-vip-texto font-bold rounded-full transition ' +
     'active:scale-[0.98] overflow-hidden shadow-lg shadow-vip/20';
 
   boton.append(crear('span', null, vip.nombre));
+  if (vip.descripcion) {
+    boton.append(crear('span', 'block mt-0.5 text-[11px] font-semibold opacity-80', vip.descripcion));
+  }
 
   const insignia = crear(
     'span',
