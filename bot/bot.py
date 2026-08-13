@@ -92,6 +92,20 @@ def texto_informacion(config: dict) -> str:
     marca = config["marca"]
     nombre = " ".join(filter(None, [marca.get("nombre"), marca.get("emoji")]))
     texto = f"*{nombre}*\n\n{marca.get('descripcion', '')}"
+
+    ofertas = [c for c in config["canales"] if c.get("tipo", "oferta") == "oferta"]
+    for canal in ofertas:
+        if canal.get("descripcion"):
+            texto += f"\n\n📢 *{canal['nombre']}*: {canal['descripcion']}"
+
+    vip = config.get("vip")
+    if vip and vip.get("descripcion"):
+        texto += f"\n\n👑 *{vip['nombre']}*: {vip['descripcion']}"
+        texto += (
+            "\n\nLa suscripción se paga de forma segura con MercadoPago, se renueva "
+            "automáticamente y podés cancelarla cuando quieras."
+        )
+
     if config.get("contacto"):
         texto += "\n\nToca 💬 Háblame en el menú si necesitas hablar con nosotros."
     return texto
@@ -160,10 +174,14 @@ async def cb_suscribirme_vip(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
     context.user_data["esperando_email_vip"] = True
+    config = cargar_config()
+    vip = config.get("vip") or {}
+    intro = f"👑 {vip['descripcion']}\n\n" if vip.get("descripcion") else ""
     teclado = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")]])
     await _mostrar(
         update,
         context,
+        f"{intro}El pago es 100% seguro con MercadoPago y podés cancelar cuando quieras.\n\n"
         "Indicá el correo de tu cuenta de MercadoPago (el mismo con el que vas a pagar).\n"
         "Escribilo en tu próximo mensaje 👇",
         teclado,
