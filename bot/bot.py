@@ -14,7 +14,7 @@ from pathlib import Path
 import mercadopago
 from dotenv import load_dotenv
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.error import Conflict
+from telegram.error import Conflict, TelegramError
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -176,6 +176,22 @@ async def cb_solicitud_union(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if activo:
         await solicitud.approve()
         log.info("Solicitud de unión aprobada: %s", solicitud.from_user.id)
+        try:
+            # Telegram no siempre lleva al usuario al canal solo tras aprobar una solicitud de
+            # unión — sin este aviso, un usuario común se queda esperando sin saber que ya puede
+            # entrar. Mismo criterio que invitar(): si el DM falla (nunca le escribió al bot), se
+            # loguea sin cortar el flujo — la aprobación en sí ya se hizo.
+            await context.bot.send_message(
+                chat_id=solicitud.from_user.id,
+                text=(
+                    "✅ ¡Listo, tu solicitud fue aprobada! Si Telegram no te abrió el canal solo, "
+                    "tocá de nuevo el link que te mandamos para entrar."
+                ),
+            )
+        except TelegramError:
+            log.exception(
+                "No se pudo avisar por DM a %s que su solicitud fue aprobada", solicitud.from_user.id,
+            )
     else:
         await solicitud.decline()
         log.info("Solicitud de unión rechazada (sin suscripción activa): %s", solicitud.from_user.id)
