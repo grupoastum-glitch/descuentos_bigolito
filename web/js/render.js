@@ -122,6 +122,9 @@ function botonVip(vip) {
   if (vip.descripcion) {
     boton.append(crear('span', 'block mt-0.5 text-[11px] font-semibold opacity-80', vip.descripcion));
   }
+  if (vip.nota) {
+    boton.append(crear('span', 'block mt-0.5 text-[10px] font-normal opacity-70', vip.nota));
+  }
 
   const insignia = crear(
     'span',

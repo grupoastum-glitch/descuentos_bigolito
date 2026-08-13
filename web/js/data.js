@@ -76,7 +76,7 @@ function normalizarConfig(datos) {
 
   const vipCrudo = normalizarCanal(datos?.vip);
   const vip = vipCrudo
-    ? { ...vipCrudo, icono: texto(datos.vip.icono) || 'crown' }
+    ? { ...vipCrudo, icono: texto(datos.vip.icono) || 'crown', nota: texto(datos.vip.nota) }
     : null;
 
   const redes = Array.isArray(datos?.redes)

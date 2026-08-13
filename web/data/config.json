@@ -4,7 +4,7 @@
     "emoji": "🐶",
     "saludo": "Hola! 👋",
     "titulo": "¡Bienvenido!",
-    "descripcion": "Recibe los mejores descuentos todo el día, de las principales tiendas de Chile."
+    "descripcion": "Recibe los mejores descuentos todo el día, de las principales tiendas de Chile en nuestra comunidad de Telegram."
   },
   "canales": [
     {
@@ -18,7 +18,8 @@
     "nombre": "Descuentos VIP",
     "url": "https://t.me/descuentos_bigolito_cl_bot",
     "icono": "crown",
-    "descripcion": "50% y más, por $3.000/mes."
+    "descripcion": "50% y más, por $3.000/mes.",
+    "nota": "Pago seguro con MercadoPago, cancelás cuando quieras."
   },
   "redes": [
     { "nombre": "Bot de Telegram", "url": "https://t.me/descuentos_bigolito_cl_bot", "icono": "send" }

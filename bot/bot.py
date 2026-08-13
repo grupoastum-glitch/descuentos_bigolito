@@ -94,12 +94,13 @@ def texto_bienvenida(config: dict) -> str:
     ofertas = [c for c in config["canales"] if c.get("tipo", "oferta") == "oferta"]
     for canal in ofertas:
         if canal.get("descripcion"):
-            texto += f"\n\n🏷️ *{canal['descripcion']}*"
+            texto += f"\n\n🏷️ {canal['descripcion']}"
 
     vip = config.get("vip")
     if vip and vip.get("descripcion"):
-        texto += f"\n\n*{vip['descripcion']}*"
-        texto += "\n_Pago seguro con MercadoPago, cancelás cuando quieras._"
+        texto += f"\n\n{vip['descripcion']}"
+        if vip.get("nota"):
+            texto += f" {vip['nota']}"
 
     return texto
 
