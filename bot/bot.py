@@ -94,12 +94,12 @@ def texto_bienvenida(config: dict) -> str:
     ofertas = [c for c in config["canales"] if c.get("tipo", "oferta") == "oferta"]
     for canal in ofertas:
         if canal.get("descripcion"):
-            texto += f"\n\n🏷️ {canal['descripcion']}"
+            texto += f"\n\n🏷️ *{canal['descripcion']}*"
 
     vip = config.get("vip")
     if vip and vip.get("descripcion"):
         texto += (
-            f"\n\n👑 {vip['descripcion']} Pago seguro con MercadoPago, cancelás cuando quieras."
+            f"\n\n👑 *{vip['descripcion']}* Pago seguro con MercadoPago, cancelás cuando quieras."
         )
 
     return texto
@@ -160,7 +160,7 @@ async def cb_suscribirme_vip(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     config = cargar_config()
     vip = config.get("vip") or {}
-    intro = f"👑 {vip['descripcion']}\n\n" if vip.get("descripcion") else ""
+    intro = f"👑 *{vip['descripcion']}*\n\n" if vip.get("descripcion") else ""
 
     # Si ya se suscribió antes con éxito, se saltea pedir el email de nuevo — se reusa la misma
     # pantalla de confirmación que el flujo normal (cb_confirmar_email_vip/cb_reescribir_email_vip).

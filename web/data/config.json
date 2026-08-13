@@ -4,13 +4,13 @@
     "emoji": "🐶",
     "saludo": "Hola! 👋",
     "titulo": "¡Bienvenido!",
-    "descripcion": "Únete a nuestra comunidad de Telegram y recibe cada pocos segundos los mejores descuentos de las principales tiendas de Chile."
+    "descripcion": "Recibe los mejores descuentos todo el día, de las principales tiendas de Chile."
   },
   "canales": [
     {
       "nombre": "Descuentos 25%+ 🏷️",
       "url": "https://t.me/descuentos_bigolito",
-      "descripcion": "Descuentos 25% al 49%, todos los días.",
+      "descripcion": "25% al 49% OFF, todos los días, GRATIS.",
       "tipo": "oferta"
     }
   ],
@@ -18,7 +18,7 @@
     "nombre": "Descuentos VIP",
     "url": "https://t.me/descuentos_bigolito_cl_bot",
     "icono": "crown",
-    "descripcion": "Descuentos 50% o más, por $3.000/mes."
+    "descripcion": "50% OFF o más, por $3.000/mes."
   },
   "redes": [
     { "nombre": "Instagram", "url": "https://instagram.com/tu_cuenta", "icono": "camera" },
