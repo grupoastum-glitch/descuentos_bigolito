@@ -44,16 +44,22 @@ async def _correr() -> None:
                     preapproval_id, fila["telegram_user_id"], fila["canal_id"],
                 )
 
-        # segunda fase: canceladas/pausadas cuyo período ya pagado venció — recién acá se corta
-        # el acceso de verdad (ver PLAN_periodo_gracia_cancelacion.md). No requiere consultar a
-        # MercadoPago, es una comparación de fecha local.
+        # segunda fase: cuyo período ya pagado venció — recién acá se corta el acceso de verdad
+        # (ver PLAN_periodo_gracia_cancelacion.md). Incluye filas 'activa' cuyo cobro recurrente
+        # falló en silencio (MercadoPago sigue reintentando sin haber cambiado el status todavía),
+        # no solo cancelaciones/pausas explícitas. No requiere consultar a MercadoPago, es una
+        # comparación de fecha local.
         vencidas = await db.listar_vencidas(pool)
         log.info("%s suscripciones con período de gracia vencido.", len(vencidas))
 
         for fila in vencidas:
+            # 'vencida' (impago, recuperable si un reintento posterior tiene éxito — ver
+            # pagos/logica.py::aplicar_pago_recurrente) vs 'expirada' (cancelación/pausa explícita
+            # del usuario, final).
+            nuevo_estado = "vencida" if fila["estado"] == "activa" else "expirada"
             try:
                 await telegram_client.expulsar(fila["telegram_user_id"], fila["canal_id"])
-                await db.marcar_estado(pool, fila["telegram_user_id"], fila["canal_id"], "expirada")
+                await db.marcar_estado(pool, fila["telegram_user_id"], fila["canal_id"], nuevo_estado)
             except Exception:
                 # se reintenta mañana, mismo criterio que la fase de reconfirmación de arriba.
                 log.exception(

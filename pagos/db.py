@@ -112,10 +112,11 @@ async def listar_activas(pool: asyncpg.Pool) -> list[dict]:
 
 async def buscar_por_preapproval_id(pool: asyncpg.Pool, mercadopago_preapproval_id: str) -> dict | None:
     """Usado al procesar un webhook de cobro recurrente (invoice): el invoice trae el
-    preapproval_id, no el telegram_user_id/canal_id directamente."""
+    preapproval_id, no el telegram_user_id/canal_id directamente. Incluye `estado` para que el
+    caller detecte una recuperación (ej. de 'vencida' tras un reintento de cobro exitoso)."""
     async with pool.acquire() as con:
         fila = await con.fetchrow(
-            """SELECT telegram_user_id, canal_id, acceso_hasta, ultimo_invoice_id
+            """SELECT telegram_user_id, canal_id, estado, acceso_hasta, ultimo_invoice_id
                FROM suscripciones WHERE mercadopago_preapproval_id = $1""",
             mercadopago_preapproval_id,
         )
@@ -146,11 +147,14 @@ async def extender_acceso(
 
 
 async def listar_vencidas(pool: asyncpg.Pool) -> list[dict]:
-    """Usado por pagos/reconciliacion.py: suscripciones canceladas/pausadas cuyo período pagado ya
-    venció y todavía no fueron expulsadas."""
+    """Usado por pagos/reconciliacion.py: suscripciones cuyo período pagado ya venció y todavía no
+    fueron expulsadas. Incluye 'activa' a propósito: una fila activa con acceso_hasta pasado
+    significa que un cobro recurrente falló en silencio (MercadoPago sigue reintentando sin haber
+    cambiado el status de la preapproval todavía) — no solo cancelaciones/pausas explícitas. Se
+    incluye `estado` para que el caller distinga ambos casos al marcar el resultado."""
     async with pool.acquire() as con:
         filas = await con.fetch(
-            """SELECT telegram_user_id, canal_id FROM suscripciones
-               WHERE estado IN ('cancelada', 'pausada') AND acceso_hasta <= now()""",
+            """SELECT telegram_user_id, canal_id, estado FROM suscripciones
+               WHERE estado IN ('activa', 'cancelada', 'pausada') AND acceso_hasta <= now()""",
         )
     return [dict(f) for f in filas]

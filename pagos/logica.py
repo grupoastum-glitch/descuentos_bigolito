@@ -127,6 +127,15 @@ async def aplicar_pago_recurrente(pool: asyncpg.Pool, invoice: dict) -> None:
         log.info("Invoice %s ya procesado — se ignora (reenvío de MercadoPago).", invoice_id)
         return
 
+    if fila["estado"] != "activa":
+        # un cobro exitoso mientras la fila no estaba 'activa' es una recuperación: o bien un
+        # reintento de MercadoPago que finalmente funcionó (la fila quedó 'vencida' por
+        # reconciliacion.py sin que la preapproval cambiara de status nunca), o un invoice que
+        # llegó justo después de una expulsión por una carrera angosta. En ambos casos hay que
+        # reinvitar — no llega un cambio de estado de la preapproval que dispare esto solo.
+        await db.marcar_estado(pool, fila["telegram_user_id"], fila["canal_id"], "activa")
+        await telegram_client.invitar(fila["telegram_user_id"], fila["canal_id"])
+
     # el período (frequency/frequency_type) vive en la preapproval, no en el invoice — se
     # consulta acá en vez de guardarlo aparte, ya recibir un cobro confirma que sigue vigente.
     preapproval = await asyncio.to_thread(mercadopago_client.obtener_preapproval, preapproval_id)
