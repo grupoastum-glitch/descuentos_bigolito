@@ -137,3 +137,7 @@ async def aplicar_pago_recurrente(pool: asyncpg.Pool, invoice: dict) -> None:
         _periodo_de(preapproval["auto_recurring"]),
         invoice_id=invoice_id,
     )
+    log.info(
+        "Acceso extendido para %s en canal %s (invoice %s, preapproval %s).",
+        fila["telegram_user_id"], fila["canal_id"], invoice_id, preapproval_id,
+    )
