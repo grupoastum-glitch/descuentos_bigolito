@@ -107,12 +107,10 @@ function texto(id, valor) {
 }
 
 function aplicarMarca(marca) {
-  const nombreCompleto = [marca.nombre, marca.emoji].filter(Boolean).join(' ');
-  texto('marca-nombre', nombreCompleto);
-  texto('marca-saludo', marca.saludo);
+  texto('marca-nombre', marca.nombre);
   texto('hero-titulo', marca.titulo);
   texto('hero-descripcion', marca.descripcion);
-  document.title = `${nombreCompleto} | Ofertas y descuentos`;
+  document.title = `${marca.nombre} | Ofertas y descuentos`;
 }
 
 /* ----------------------------- arranque ----------------------------- */
