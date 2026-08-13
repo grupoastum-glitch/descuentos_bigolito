@@ -122,9 +122,6 @@ function botonVip(vip) {
   if (vip.descripcion) {
     boton.append(crear('span', 'block mt-0.5 text-[11px] font-semibold opacity-80', vip.descripcion));
   }
-  if (vip.nota) {
-    boton.append(crear('span', 'block mt-0.5 text-[10px] font-normal opacity-70', vip.nota));
-  }
 
   const insignia = crear(
     'span',
@@ -152,7 +149,14 @@ export function renderCanales(contenedor, canales, vip) {
   }
 
   canales.forEach((canal) => contenedor.append(botonCanal(canal)));
-  if (vip) contenedor.append(botonVip(vip));
+  if (vip) {
+    contenedor.append(botonVip(vip));
+    if (vip.nota) {
+      contenedor.append(
+        crear('p', 'text-center text-[11px] text-gray-500 dark:text-neutral-500 -mt-1.5', vip.nota)
+      );
+    }
+  }
 }
 
 /* ------------------------------ redes ------------------------------ */
