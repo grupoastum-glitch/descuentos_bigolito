@@ -88,17 +88,17 @@ def texto_bienvenida(config: dict) -> str:
     nombre = " ".join(filter(None, [marca.get("nombre"), marca.get("emoji")]))
     texto = f"{marca.get('saludo', '')}\n\nSoy el bot de *{nombre}*. {marca.get('descripcion', '')}"
 
+    # Sin repetir el nombre del canal/VIP acá: el botón de abajo ya lo dice, así que cada línea
+    # va directo al beneficio en vez de duplicar "Descuentos 25%+"/"Descuentos VIP" en el texto.
     ofertas = [c for c in config["canales"] if c.get("tipo", "oferta") == "oferta"]
     for canal in ofertas:
         if canal.get("descripcion"):
-            texto += f"\n\n📢 *{canal['nombre']}*: {canal['descripcion']}"
+            texto += f"\n\n🏷️ {canal['descripcion']}"
 
     vip = config.get("vip")
     if vip and vip.get("descripcion"):
-        texto += f"\n\n👑 *{vip['nombre']}*: {vip['descripcion']}"
         texto += (
-            "\n\nLa suscripción se paga de forma segura con MercadoPago, se renueva "
-            "automáticamente y podés cancelarla cuando quieras."
+            f"\n\n👑 {vip['descripcion']} Pago seguro con MercadoPago, cancelás cuando quieras."
         )
 
     return texto

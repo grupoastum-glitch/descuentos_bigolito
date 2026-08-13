@@ -4,13 +4,13 @@
     "emoji": "🐶",
     "saludo": "Hola! 👋",
     "titulo": "¡Bienvenido!",
-    "descripcion": "Únete a nuestra comunidad de Telegram y recibe minuto a minuto los mejores descuentos de las principales tiendas de Chile."
+    "descripcion": "Únete a nuestra comunidad de Telegram y recibe cada pocos segundos los mejores descuentos de las principales tiendas de Chile."
   },
   "canales": [
     {
       "nombre": "Descuentos 25%+ 🏷️",
       "url": "https://t.me/descuentos_bigolito",
-      "descripcion": "Descuentos del 25% al 49%, todos los días.",
+      "descripcion": "Descuentos 25% al 49%, todos los días.",
       "tipo": "oferta"
     }
   ],
@@ -18,7 +18,7 @@
     "nombre": "Descuentos VIP",
     "url": "https://t.me/super_descuentos_bigolito",
     "icono": "crown",
-    "descripcion": "Descuentos del 50% o más, por $3.000 CLP al mes."
+    "descripcion": "Descuentos 50% o más, por $3.000/mes."
   },
   "redes": [
     { "nombre": "Instagram", "url": "https://instagram.com/tu_cuenta", "icono": "camera" },
@@ -30,7 +30,7 @@
     "url": "https://t.me/nicolass94588"
   },
   "bot": {
-    "descripcion_larga": "¡Hola! 👋 Soy el bot de Descuentos Bigolito 🐶, tu acceso directo a los mejores descuentos, cupones y ofertas del día.\n\n📢 Canal gratis: descuentos del 25% al 49%.\n👑 Descuentos VIP: descuentos del 50% o más, por $3.000 CLP al mes.\n\nEscribe /start para ver el menú completo.",
+    "descripcion_larga": "¡Hola! 👋 Soy el bot de Descuentos Bigolito 🐶, tu acceso directo a los mejores descuentos, cupones y ofertas del día.\n\n📢 Canal gratis: descuentos 25% al 49%.\n👑 Descuentos VIP: descuentos 50% o más, por $3.000/mes.\n\nEscribe /start para ver el menú completo.",
     "descripcion_corta": "Bot oficial de Descuentos Bigolito 🐶 — descubre las ofertas antes que tú.",
     "comandos": []
   }
