@@ -98,9 +98,8 @@ def texto_bienvenida(config: dict) -> str:
 
     vip = config.get("vip")
     if vip and vip.get("descripcion"):
-        texto += (
-            f"\n\n👑 *{vip['descripcion']}* Pago seguro con MercadoPago, cancelás cuando quieras."
-        )
+        texto += f"\n\n*{vip['descripcion']}*"
+        texto += "\n_Pago seguro con MercadoPago, cancelás cuando quieras._"
 
     return texto
 

@@ -8,9 +8,9 @@
   },
   "canales": [
     {
-      "nombre": "Descuentos 25%+ 🏷️",
+      "nombre": "Descuentos 25% al 49% 🏷️",
       "url": "https://t.me/descuentos_bigolito",
-      "descripcion": "25% al 49% OFF, todos los días, GRATIS.",
+      "descripcion": "Todos los días, GRATIS.",
       "tipo": "oferta"
     }
   ],
@@ -18,11 +18,9 @@
     "nombre": "Descuentos VIP",
     "url": "https://t.me/descuentos_bigolito_cl_bot",
     "icono": "crown",
-    "descripcion": "50% OFF o más, por $3.000/mes."
+    "descripcion": "50% y más, por $3.000/mes."
   },
   "redes": [
-    { "nombre": "Instagram", "url": "https://instagram.com/tu_cuenta", "icono": "camera" },
-    { "nombre": "TikTok", "url": "https://tiktok.com/@tu_cuenta", "icono": "music-2" },
     { "nombre": "Bot de Telegram", "url": "https://t.me/descuentos_bigolito_cl_bot", "icono": "send" }
   ],
   "contacto": {
