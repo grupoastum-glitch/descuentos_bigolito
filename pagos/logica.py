@@ -84,11 +84,11 @@ async def aplicar_estado_preapproval(pool: asyncpg.Pool, preapproval: dict) -> N
 
     if estado == "activa":
         if es_nueva_activacion:
-            # primera activación: arranca el reloj de acceso pagado. Los cobros siguientes lo
-            # extienden vía aplicar_pago_recurrente, no acá.
-            await db.extender_acceso(
-                pool, telegram_user_id, canal_id, _periodo_de(preapproval["auto_recurring"]),
-            )
+            # arranca acceso_hasta en "ahora", sin sumar período: el período real lo otorga
+            # aplicar_pago_recurrente, incluido el primer cobro — MercadoPago dispara también su
+            # propio webhook de invoice para esa primera carga (confirmado en la prueba real), así
+            # que sumarlo acá también contaría el mismo pago dos veces.
+            await db.extender_acceso(pool, telegram_user_id, canal_id, timedelta(0))
             await telegram_client.invitar(telegram_user_id, canal_id)
     # Ya no se expulsa acá al pausar/cancelar — el usuario conserva el acceso hasta que vence
     # acceso_hasta (el período que ya pagó). La expulsión real la hace pagos/reconciliacion.py
