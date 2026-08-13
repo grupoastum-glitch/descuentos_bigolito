@@ -17,6 +17,7 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 import db  # noqa: E402 (después de load_dotenv a propósito, config lee os.environ)
 import logica  # noqa: E402
 import mercadopago_client  # noqa: E402
+import telegram_client  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("pagos.reconciliacion")
@@ -41,6 +42,23 @@ async def _correr() -> None:
                 log.exception(
                     "Falló la reconciliación de la preapproval %s (usuario %s, canal %s)",
                     preapproval_id, fila["telegram_user_id"], fila["canal_id"],
+                )
+
+        # segunda fase: canceladas/pausadas cuyo período ya pagado venció — recién acá se corta
+        # el acceso de verdad (ver PLAN_periodo_gracia_cancelacion.md). No requiere consultar a
+        # MercadoPago, es una comparación de fecha local.
+        vencidas = await db.listar_vencidas(pool)
+        log.info("%s suscripciones con período de gracia vencido.", len(vencidas))
+
+        for fila in vencidas:
+            try:
+                await telegram_client.expulsar(fila["telegram_user_id"], fila["canal_id"])
+                await db.marcar_estado(pool, fila["telegram_user_id"], fila["canal_id"], "expirada")
+            except Exception:
+                # se reintenta mañana, mismo criterio que la fase de reconfirmación de arriba.
+                log.exception(
+                    "Falló la expulsión por vencimiento de %s en canal %s",
+                    fila["telegram_user_id"], fila["canal_id"],
                 )
 
         log.info("Reconciliación terminada.")

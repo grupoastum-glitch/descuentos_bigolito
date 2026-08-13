@@ -42,3 +42,12 @@ def obtener_preapproval(preapproval_id: str) -> dict:
     resultado = _sdk.preapproval().get(preapproval_id)
     resultado.raise_for_status()
     return resultado["response"]
+
+
+def obtener_invoice(invoice_id: str) -> dict:
+    """GET /authorized_payments/{id} — un invoice representa un cobro individual de un ciclo de
+    la suscripción (lo que dispara el webhook de topic 'subscription_authorized_payment'). Fuente:
+    mercadopago.resources.invoice.Invoice en el SDK oficial (sdk.invoice().get(...))."""
+    resultado = _sdk.invoice().get(invoice_id)
+    resultado.raise_for_status()
+    return resultado["response"]

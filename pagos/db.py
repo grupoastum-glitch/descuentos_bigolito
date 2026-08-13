@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS en el primer connect — sin herramienta de migracion
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import asyncpg
 
@@ -26,6 +26,13 @@ CREATE TABLE IF NOT EXISTS suscripciones (
 );
 
 CREATE INDEX IF NOT EXISTS ix_suscripciones_estado ON suscripciones (estado);
+
+-- acceso_hasta: hasta cuándo tiene acceso pagado, independiente del estado actual — permite
+-- respetar el período ya pagado al cancelar en vez de expulsar al instante (ver
+-- PLAN_periodo_gracia_cancelacion.md). ultimo_invoice_id evita extender el acceso dos veces si
+-- MercadoPago reenvía el mismo webhook de cobro.
+ALTER TABLE suscripciones ADD COLUMN IF NOT EXISTS acceso_hasta TIMESTAMPTZ;
+ALTER TABLE suscripciones ADD COLUMN IF NOT EXISTS ultimo_invoice_id TEXT;
 """
 
 _pool: asyncpg.Pool | None = None
@@ -99,5 +106,51 @@ async def listar_activas(pool: asyncpg.Pool) -> list[dict]:
         filas = await con.fetch(
             """SELECT telegram_user_id, canal_id, mercadopago_preapproval_id
                FROM suscripciones WHERE estado = 'activa'""",
+        )
+    return [dict(f) for f in filas]
+
+
+async def buscar_por_preapproval_id(pool: asyncpg.Pool, mercadopago_preapproval_id: str) -> dict | None:
+    """Usado al procesar un webhook de cobro recurrente (invoice): el invoice trae el
+    preapproval_id, no el telegram_user_id/canal_id directamente."""
+    async with pool.acquire() as con:
+        fila = await con.fetchrow(
+            """SELECT telegram_user_id, canal_id, acceso_hasta, ultimo_invoice_id
+               FROM suscripciones WHERE mercadopago_preapproval_id = $1""",
+            mercadopago_preapproval_id,
+        )
+    return dict(fila) if fila else None
+
+
+async def extender_acceso(
+    pool: asyncpg.Pool,
+    telegram_user_id: int,
+    canal_id: str,
+    periodo: timedelta,
+    invoice_id: str | None = None,
+) -> None:
+    """Suma un período de acceso pagado. Parte del mayor entre `acceso_hasta` actual y ahora (no
+    siempre `acceso_hasta` a secas) para cubrir tanto la primera activación (todavía sin valor)
+    como un webhook que llega tarde. `invoice_id` se guarda para no procesar el mismo cobro dos
+    veces si MercadoPago reenvía la notificación (la primera activación no tiene invoice propio,
+    así que pasa None)."""
+    async with pool.acquire() as con:
+        await con.execute(
+            """UPDATE suscripciones
+               SET acceso_hasta = GREATEST(COALESCE(acceso_hasta, now()), now()) + $3::interval,
+                   ultimo_invoice_id = COALESCE($4, ultimo_invoice_id),
+                   ultima_actualizacion = now()
+               WHERE telegram_user_id = $1 AND canal_id = $2""",
+            telegram_user_id, canal_id, periodo, invoice_id,
+        )
+
+
+async def listar_vencidas(pool: asyncpg.Pool) -> list[dict]:
+    """Usado por pagos/reconciliacion.py: suscripciones canceladas/pausadas cuyo período pagado ya
+    venció y todavía no fueron expulsadas."""
+    async with pool.acquire() as con:
+        filas = await con.fetch(
+            """SELECT telegram_user_id, canal_id FROM suscripciones
+               WHERE estado IN ('cancelada', 'pausada') AND acceso_hasta <= now()""",
         )
     return [dict(f) for f in filas]

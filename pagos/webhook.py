@@ -28,6 +28,10 @@ log = logging.getLogger("pagos.webhook")
 # consistente sobre cuál usa cada integración; ambos se resuelven igual acá.
 _TOPICS_PREAPPROVAL = {"preapproval", "subscription_preapproval"}
 
+# topic de cada cobro recurrente individual (un ciclo de facturación ya cargado/intentado) — se
+# usa para extender el acceso pagado, ver pagos/logica.py::aplicar_pago_recurrente.
+_TOPICS_PAGO = {"subscription_authorized_payment"}
+
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
@@ -54,10 +58,9 @@ async def recibir_webhook(request: Request) -> JSONResponse:
     if not firma_valida:
         return JSONResponse({"error": "firma inválida"}, status_code=401)
 
-    if topic not in _TOPICS_PREAPPROVAL:
-        # incluye "payment" (cada cobro periódico individual) — no se actúa sobre esos acá: el
-        # estado de la preapproval (que sí escuchamos) ya refleja cuando MP agota reintentos de
-        # cobro y cancela/pausa la suscripción. Se responde 200 igual para que MP no reintente.
+    if topic not in _TOPICS_PREAPPROVAL and topic not in _TOPICS_PAGO:
+        # incluye "payment" (el pago suelto detrás de cada invoice, no el invoice en sí) — no se
+        # actúa sobre esos acá. Se responde 200 igual para que MP no reintente.
         log.info("Webhook de topic '%s' recibido, sin acción.", topic)
         return JSONResponse({"status": "ignorado"}, status_code=200)
 
@@ -65,12 +68,16 @@ async def recibir_webhook(request: Request) -> JSONResponse:
         log.warning("Webhook de topic '%s' sin data.id — no se puede procesar.", topic)
         return JSONResponse({"status": "sin data.id"}, status_code=200)
 
-    # obtener_preapproval hace una request HTTP síncrona (SDK de MercadoPago) — se corre en un
-    # thread aparte para no bloquear el event loop mientras espera la respuesta.
-    preapproval = await run_in_threadpool(mercadopago_client.obtener_preapproval, data_id)
-
     pool = await db.conectar()
-    await logica.aplicar_estado_preapproval(pool, preapproval)
+
+    if topic in _TOPICS_PREAPPROVAL:
+        # obtener_preapproval hace una request HTTP síncrona (SDK de MercadoPago) — se corre en
+        # un thread aparte para no bloquear el event loop mientras espera la respuesta.
+        preapproval = await run_in_threadpool(mercadopago_client.obtener_preapproval, data_id)
+        await logica.aplicar_estado_preapproval(pool, preapproval)
+    else:
+        invoice = await run_in_threadpool(mercadopago_client.obtener_invoice, data_id)
+        await logica.aplicar_pago_recurrente(pool, invoice)
 
     return JSONResponse({"status": "ok"}, status_code=200)
 

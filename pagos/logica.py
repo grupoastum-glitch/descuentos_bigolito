@@ -3,12 +3,15 @@ real de una preapproval, una vez consultado a la API de MercadoPago (nunca desde
 webhook sin verificar — ver mercadopago_client.obtener_preapproval)."""
 from __future__ import annotations
 
+import asyncio
 import logging
+from datetime import timedelta
 
 import asyncpg
 
 import config
 import db
+import mercadopago_client
 import telegram_client
 
 log = logging.getLogger("pagos.logica")
@@ -18,6 +21,20 @@ _ESTADO_POR_STATUS_MP = {
     "paused": "pausada",
     "cancelled": "cancelada",
 }
+
+# A confirmar contra un pago real (ver PLAN_periodo_gracia_cancelacion.md) — el log de debug en
+# aplicar_pago_recurrente queda a propósito hasta confirmar este valor con la próxima recarga.
+_STATUS_INVOICE_APROBADO = "approved"
+
+
+def _periodo_de(auto_recurring: dict) -> timedelta:
+    """Traduce frequency/frequency_type de MercadoPago a un timedelta. "months" se aproxima a 30
+    días por mes — MercadoPago no admite otro frequency_type que "days"/"months", y una duración
+    calendario exacta es más precisión de la que este negocio necesita."""
+    frecuencia = auto_recurring["frequency"]
+    if auto_recurring["frequency_type"] == "months":
+        return timedelta(days=30 * frecuencia)
+    return timedelta(days=frecuencia)
 
 
 def _parse_external_reference(external_reference: str | None) -> tuple[int, str] | None:
@@ -65,6 +82,54 @@ async def aplicar_estado_preapproval(pool: asyncpg.Pool, preapproval: dict) -> N
 
     if estado == "activa":
         if es_nueva_activacion:
+            # primera activación: arranca el reloj de acceso pagado. Los cobros siguientes lo
+            # extienden vía aplicar_pago_recurrente, no acá.
+            await db.extender_acceso(
+                pool, telegram_user_id, canal_id, _periodo_de(preapproval["auto_recurring"]),
+            )
             await telegram_client.invitar(telegram_user_id, canal_id)
-    else:
-        await telegram_client.expulsar(telegram_user_id, canal_id)
+    # Ya no se expulsa acá al pausar/cancelar — el usuario conserva el acceso hasta que vence
+    # acceso_hasta (el período que ya pagó). La expulsión real la hace pagos/reconciliacion.py
+    # cuando ese plazo pasa. Ver PLAN_periodo_gracia_cancelacion.md.
+
+
+async def aplicar_pago_recurrente(pool: asyncpg.Pool, invoice: dict) -> None:
+    """Traduce un cobro recurrente confirmado (invoice/authorized_payment) en una extensión del
+    acceso pagado. Se dispara desde el webhook de topic 'subscription_authorized_payment', que
+    antes se ignoraba por completo."""
+    log.info("Invoice recibido (debug, sacar tras confirmar el campo 'status'): %r", invoice)
+
+    # normalizado a str: el SDK puede devolver "id" como int, y la columna ultimo_invoice_id es
+    # TEXT — sin esto, la comparación de reenvío de abajo nunca matchea.
+    invoice_id = str(invoice["id"]) if invoice.get("id") is not None else None
+
+    if invoice.get("status") != _STATUS_INVOICE_APROBADO:
+        return
+
+    preapproval_id = invoice.get("preapproval_id")
+    if not preapproval_id:
+        log.warning("Invoice %s sin preapproval_id — se ignora.", invoice_id)
+        return
+
+    fila = await db.buscar_por_preapproval_id(pool, preapproval_id)
+    if fila is None:
+        log.warning(
+            "Invoice %s referencia una preapproval desconocida: %s — se ignora.",
+            invoice_id, preapproval_id,
+        )
+        return
+
+    if invoice_id is not None and fila["ultimo_invoice_id"] == invoice_id:
+        log.info("Invoice %s ya procesado — se ignora (reenvío de MercadoPago).", invoice_id)
+        return
+
+    # el período (frequency/frequency_type) vive en la preapproval, no en el invoice — se
+    # consulta acá en vez de guardarlo aparte, ya recibir un cobro confirma que sigue vigente.
+    preapproval = await asyncio.to_thread(mercadopago_client.obtener_preapproval, preapproval_id)
+    await db.extender_acceso(
+        pool,
+        fila["telegram_user_id"],
+        fila["canal_id"],
+        _periodo_de(preapproval["auto_recurring"]),
+        invoice_id=invoice_id,
+    )
