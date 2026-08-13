@@ -64,7 +64,7 @@ def cargar_config() -> dict:
 
 
 def teclado_inicio(config: dict) -> InlineKeyboardMarkup | None:
-    """Menú de botones del /start: canales de ofertas, VIP, ayuda e información."""
+    """Menú de botones del /start: canales de ofertas, VIP y contacto."""
     ofertas = [c for c in config["canales"] if c.get("tipo", "oferta") == "oferta"]
     vip = config.get("vip")
     contacto = config.get("contacto")
@@ -78,20 +78,15 @@ def teclado_inicio(config: dict) -> InlineKeyboardMarkup | None:
         filas.append([InlineKeyboardButton(f"{vip['nombre']} 👑", callback_data="suscribirme_vip")])
     if contacto and contacto.get("url"):
         filas.append([InlineKeyboardButton("Háblame 💬", url=contacto["url"])])
-    filas.append([InlineKeyboardButton("ℹ️ Información", callback_data="informacion")])
     return InlineKeyboardMarkup(filas) if filas else None
 
 
 def texto_bienvenida(config: dict) -> str:
+    """Saludo del /start — incluye directo la explicación de los dos niveles (gratis/VIP) y el
+    pago, para no depender de un botón "Información" aparte que solo agregaba un tap extra."""
     marca = config["marca"]
     nombre = " ".join(filter(None, [marca.get("nombre"), marca.get("emoji")]))
-    return f"{marca.get('saludo', '')}\n\nSoy el bot de *{nombre}*. {marca.get('descripcion', '')}"
-
-
-def texto_informacion(config: dict) -> str:
-    marca = config["marca"]
-    nombre = " ".join(filter(None, [marca.get("nombre"), marca.get("emoji")]))
-    texto = f"*{nombre}*\n\n{marca.get('descripcion', '')}"
+    texto = f"{marca.get('saludo', '')}\n\nSoy el bot de *{nombre}*. {marca.get('descripcion', '')}"
 
     ofertas = [c for c in config["canales"] if c.get("tipo", "oferta") == "oferta"]
     for canal in ofertas:
@@ -106,8 +101,6 @@ def texto_informacion(config: dict) -> str:
             "automáticamente y podés cancelarla cuando quieras."
         )
 
-    if config.get("contacto"):
-        texto += "\n\nToca 💬 Háblame en el menú si necesitas hablar con nosotros."
     return texto
 
 
@@ -155,16 +148,6 @@ async def cb_volver_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     context.user_data.pop("email_vip_pendiente", None)
     config = cargar_config()
     await _mostrar(update, context, texto_bienvenida(config), teclado_inicio(config))
-
-
-async def cb_informacion(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-    config = cargar_config()
-    teclado = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")]]
-    )
-    await _mostrar(update, context, texto_informacion(config), teclado)
 
 
 async def cb_suscribirme_vip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -411,7 +394,6 @@ def main() -> None:
     app.bot_data["mp_frecuencia_tipo"] = mp_frecuencia_tipo
 
     app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CallbackQueryHandler(cb_informacion, pattern="^informacion$"))
     app.add_handler(CallbackQueryHandler(cb_suscribirme_vip, pattern="^suscribirme_vip$"))
     app.add_handler(CallbackQueryHandler(cb_confirmar_email_vip, pattern="^confirmar_email_vip$"))
     app.add_handler(CallbackQueryHandler(cb_reescribir_email_vip, pattern="^reescribir_email_vip$"))
