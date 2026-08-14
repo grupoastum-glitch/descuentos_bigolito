@@ -51,7 +51,12 @@ def publicar_cambios(repo_dir: Path, rutas: list[str], mensaje: str) -> bool:
             _detalle_error(error),
         )
         try:
-            _run(["git", "pull", "--rebase", "origin", config.GITHUB_BRANCH], cwd=str(repo_dir))
+            _run([
+                "git",
+                "-c", f"user.name={config.GIT_AUTHOR_NAME}",
+                "-c", f"user.email={config.GIT_AUTHOR_EMAIL}",
+                "pull", "--rebase", "origin", config.GITHUB_BRANCH,
+            ], cwd=str(repo_dir))
             _run(["git", "push", "origin", config.GITHUB_BRANCH], cwd=str(repo_dir))
         except subprocess.CalledProcessError as error_reintento:
             log.error(
