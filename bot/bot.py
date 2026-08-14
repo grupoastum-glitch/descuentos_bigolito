@@ -218,6 +218,33 @@ async def _crear_preapproval(telegram_user_id: int, email: str, context: Context
     return resultado["response"]["init_point"]
 
 
+async def _cancelar_preapprovals_pendientes(
+    telegram_user_id: int, email: str, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Cancela cualquier preapproval 'pending' que haya quedado de un intento anterior sin
+    completar, para no acumular duplicadas cada vez que el usuario reintenta (bug reproducido en
+    vivo: 6 preapprovals para el mismo usuario en una sola tanda de pruebas). La API de
+    MercadoPago no permite buscar por external_reference/status directo (confirmado contra
+    mercadopago/resources/preapproval.py y la doc de /preapproval/search) — se busca por
+    payer_email y se filtra acá. Best-effort: un fallo acá no debe impedir que el usuario cree su
+    preapproval nueva."""
+    referencia_esperada = f"{telegram_user_id}:{CANAL_ID_VIP}"
+    try:
+        resultado = context.bot_data["mp_sdk"].preapproval().search({"payer_email": email})
+        resultado.raise_for_status()
+    except Exception:
+        log.exception("Falló la búsqueda de preapprovals pendientes para %s", telegram_user_id)
+        return
+
+    for item in resultado["response"].get("results", []):
+        if item.get("status") != "pending" or item.get("external_reference") != referencia_esperada:
+            continue
+        try:
+            context.bot_data["mp_sdk"].preapproval().update(item["id"], {"status": "cancelled"})
+        except Exception:
+            log.exception("Falló la cancelación de la preapproval pendiente %s", item["id"])
+
+
 def teclado_error_preapproval() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔁 Reintentar", callback_data="suscribirme_vip")],
@@ -265,6 +292,7 @@ async def cb_confirmar_email_vip(update: Update, context: ContextTypes.DEFAULT_T
 
     telegram_user_id = update.effective_user.id
     await db.actualizar_email(context.bot_data["db_pool"], telegram_user_id, CANAL_ID_VIP, email)
+    await _cancelar_preapprovals_pendientes(telegram_user_id, email, context)
     init_point = await _crear_preapproval(telegram_user_id, email, context)
     if not init_point:
         await _mostrar(
