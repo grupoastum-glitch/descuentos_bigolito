@@ -129,6 +129,14 @@ async def _fetch_categoria(sesion, semaforo: asyncio.Semaphore, ruta: str) -> li
     return resultado
 
 
+async def _calentar_sesion(sesion) -> None:
+    """GET a la home antes de pedir /outlet, para que cualquier cookie de tienda/región que
+    Ripley setee ahí viaje también en la request al catálogo (mismo motivo que
+    fuentes.falabella, ver main._calentar_sesion — acá no hace falta reusar el HTML)."""
+    respuesta = await sesion.get(_BASE_URL + "/")
+    log.info("Warm-up: %s -> %s (status %s)", _BASE_URL + "/", respuesta.url, respuesta.status)
+
+
 async def _fetch_con_reintento(sesion, url: str):
     """Un reintento (con una pausa corta) para el único fetch cuya falla aborta toda la
     tienda — un bloqueo/timeout transitorio no debería tirar la corrida completa (ver
@@ -152,6 +160,7 @@ async def obtener_ofertas_ripley(sesion) -> tuple[list[dict], int]:
     nada de esta fuente). Mismo contrato que fuentes.falabella.listado.obtener_ofertas_listado
     y fuentes.xiaomi.listado.obtener_ofertas_xiaomi."""
     try:
+        await _calentar_sesion(sesion)
         respuesta = await _fetch_con_reintento(sesion, _CATALOGO_URL)
         html = respuesta.body.decode("utf-8", errors="replace")
         next_data = extraer_next_data(html)
