@@ -17,7 +17,17 @@ FALABELLA_OFERTAS_URL = "https://www.falabella.com/falabella-cl/page/descuentos"
 # Es una página CMS curada (hub de links a categorías con descuento), no un listado directo —
 # ver scraper/fuentes/falabella/listado.py, modo hub.
 PAGINAS_LISTADO = 5  # ~240 productos revisados por corrida, en modo directo
-PAGINAS_POR_CATEGORIA_DESCUENTOS = 1  # modo hub: páginas por cada categoría descubierta (~48-60 productos c/u)
+MAX_PAGINAS_POR_CATEGORIA_DESCUENTOS = 10  # modo hub: techo de seguridad por categoría. Medido en
+# sesión 2026-08-14 sobre las 47 categorías reales del hub: 25 de 47 (más de la mitad) siguen
+# completamente llenas incluso a la página 6, así que un número fijo chico (el 1 de antes) dejaba
+# afuera la mayor parte del catálogo en esas categorías grandes. 10 es un techo moderado.
+PAGINAS_ALEATORIAS_POR_CATEGORIA = 4  # de esas hasta 10 páginas, la página 1 siempre se pide (es
+# el ancla: la vista más reciente/relevante, y confirma si la categoría tiene contenido) más esta
+# cantidad elegida al azar entre las páginas 2..MAX_PAGINAS_POR_CATEGORIA_DESCUENTOS. Con 25 de 47
+# categorías llenas incluso a 6 páginas, pedir siempre las 10 completas en más de la mitad de las
+# categorías dispararía el tiempo/volumen de requests por corrida. Con este muestreo, cada
+# corrida pide como máximo 5 páginas por categoría (1 + 4) en vez de hasta 10, y distintas
+# corridas van cubriendo distintas páginas del mismo rango con el tiempo.
 MAX_CATEGORIAS_DESCUENTOS = 60  # modo hub: techo defensivo de requests/tiempo (hoy el hub linkea ~47)
 USER_AGENT_IMPERSONATE = "chrome"  # perfil de impersonación TLS/headers (curl_cffi)
 
@@ -123,6 +133,15 @@ TELEGRAM_REINTENTOS_MAX = 2  # reintentos si Telegram igual devuelve RetryAfter
 # --- Rutas dentro del repo clonado ---
 RUTA_OFERTAS_JSON = "web/data/ofertas.json"
 RUTA_PRODUCTOS_SEGUIDOS = "scraper/productos_seguidos.json"
+
+# --- Afiliados (Soicos) ---
+# Plantilla de deeplink por tienda (nombre igual al de Tienda.nombre en TIENDAS). Vacío = se
+# publica la URL original sin cambios. Completar tienda por tienda a medida que Soicos aprueba
+# cada programa y entrega el formato real de link. "{url}" se reemplaza por la URL del producto
+# url-encodeada.
+SOICOS_DEEPLINK_TEMPLATES: dict[str, str] = {
+    # "Falabella": "https://track.soicos.com/click?...&url={url}",
+}
 
 
 @dataclass(frozen=True)

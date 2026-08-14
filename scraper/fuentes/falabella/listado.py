@@ -177,6 +177,29 @@ async def _fetch_una_categoria(sesion, semaforo, categoria_url: str, pagina: int
     return resultado
 
 
+async def _fetch_categoria_completa(sesion, semaforo, categoria_url: str) -> list[dict]:
+    """Pide siempre la página 1 (ancla: vista más reciente/relevante, confirma si la categoría
+    tiene contenido) y, si trajo algo, un muestreo aleatorio de PAGINAS_ALEATORIAS_POR_CATEGORIA
+    páginas más dentro de 2..MAX_PAGINAS_POR_CATEGORIA_DESCUENTOS — no todas en orden, para no
+    disparar el costo por corrida en categorías grandes (más de la mitad del hub llega llena
+    hasta el techo, ver config.py). Al ser un muestreo (no un recorrido secuencial), páginas más
+    allá del fin real de la categoría simplemente no traen nada y se ignoran."""
+    items: list[dict] = []
+
+    resultado_pagina1 = await _fetch_una_categoria(sesion, semaforo, categoria_url, 1)
+    if not resultado_pagina1:
+        return items
+    items.extend(resultado_pagina1)
+
+    resto = list(range(2, config.MAX_PAGINAS_POR_CATEGORIA_DESCUENTOS + 1))
+    random.shuffle(resto)
+    for pagina in resto[:config.PAGINAS_ALEATORIAS_POR_CATEGORIA]:
+        resultado = await _fetch_una_categoria(sesion, semaforo, categoria_url, pagina)
+        if resultado:
+            items.extend(resultado)
+    return items
+
+
 async def _listado_modo_hub(sesion, url_base: str, html_pagina1: str) -> tuple[list[dict], int]:
     categorias = _extraer_urls_categoria(html_pagina1, url_base)
     log.info("Hub de descuentos (%s): %s categorías únicas encontradas", url_base, len(categorias))
@@ -185,27 +208,27 @@ async def _listado_modo_hub(sesion, url_base: str, html_pagina1: str) -> tuple[l
         return [], 0
 
     semaforo = asyncio.Semaphore(config.CONCURRENCIA_LISTADO)
-    tareas = [
-        _fetch_una_categoria(sesion, semaforo, categoria_url, pagina)
-        for categoria_url in categorias
-        for pagina in range(1, config.PAGINAS_POR_CATEGORIA_DESCUENTOS + 1)
-    ]
     # return_exceptions=True: una excepción no prevista en una sola categoría no debe tumbar la
     # corrida completa (ver incidencia 2026-08-11 en el módulo de Xiaomi, mismo patrón acá).
-    resultados = await asyncio.gather(*tareas, return_exceptions=True)
+    resultados = await asyncio.gather(*(
+        _fetch_categoria_completa(sesion, semaforo, categoria_url) for categoria_url in categorias
+    ), return_exceptions=True)
 
     items: list[dict] = []
     categorias_ok = 0
-    for resultado in resultados:
+    for categoria_url, resultado in zip(categorias, resultados):
         if isinstance(resultado, BaseException):
-            log.error("Excepción no anticipada en una categoría del hub, se omite: %r", resultado)
+            log.error(
+                "Excepción no anticipada en la categoría %s del hub, se omite: %r",
+                categoria_url, resultado,
+            )
             continue
-        if resultado is None:
+        if not resultado:
             continue
         categorias_ok += 1
         items.extend(resultado)
-    # categorias_ok cuenta "categoría×página" ok, no categorías únicas — con
-    # PAGINAS_POR_CATEGORIA_DESCUENTOS == 1 (el único valor usado hoy) ambos coinciden.
+    # categorias_ok cuenta categorías únicas con al menos una página ok (cada categoría se
+    # resuelve completa en _fetch_categoria_completa antes de llegar acá).
 
     if categorias and categorias_ok / len(categorias) < 0.5:
         log.warning(
