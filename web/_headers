@@ -1,0 +1,15 @@
+# Cloudflare Pages: fuerza a los navegadores a revalidar el HTML/JS/CSS con el servidor antes
+# de usar la copia cacheada (still permite un 304 rápido si no cambió), para que un deploy nuevo
+# se vea sin que el usuario tenga que limpiar caché a mano. Imágenes/manifest no se tocan: esos
+# sí conviene que cacheen fuerte, cambian poco.
+/
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache
+
+/js/*
+  Cache-Control: no-cache
+
+/css/*
+  Cache-Control: no-cache
