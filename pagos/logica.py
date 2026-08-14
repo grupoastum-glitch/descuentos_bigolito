@@ -78,6 +78,11 @@ async def aplicar_estado_preapproval(pool: asyncpg.Pool, preapproval: dict) -> N
         )
         return
 
+    # preapproval.get("payer_email"): confirmado contra la documentación oficial de MercadoPago
+    # que esto siempre viene None — el recurso de preapproval solo trae "payer_id" (un ID interno
+    # numérico), nunca el email. El dato real de payer_email lo persiste bot/db.py::actualizar_email
+    # cuando el usuario lo escribe/confirma en el chat; acá se sigue pasando por si algún día la
+    # API empieza a devolverlo, protegido por el COALESCE de db.upsert_suscripcion.
     es_nueva_activacion = await db.upsert_suscripcion(
         pool, telegram_user_id, canal_id, preapproval["id"], estado, preapproval.get("payer_email"),
     )

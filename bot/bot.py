@@ -176,7 +176,7 @@ async def cb_suscribirme_vip(update: Update, context: ContextTypes.DEFAULT_TYPE)
             [InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")],
         ])
         await _mostrar(
-            update, context, f"{intro}¿Seguís usando tu correo de MercadoPago: *{email_seguro}*?", teclado
+            update, context, f"{intro}¿Seguís usando este correo: *{email_seguro}*?", teclado
         )
         return
 
@@ -186,9 +186,7 @@ async def cb_suscribirme_vip(update: Update, context: ContextTypes.DEFAULT_TYPE)
         update,
         context,
         f"{intro}El pago es 100% seguro con MercadoPago y podés cancelar cuando quieras.\n\n"
-        "Indicá el correo de tu cuenta de MercadoPago (el mismo con el que vas a pagar).\n"
-        "¿No te acordás? Abrí la app de MercadoPago → tocá tu perfil (el ícono de arriba) → "
-        "ahí aparece tu email.\n\nEscribilo en tu próximo mensaje 👇",
+        "Para arrancar, decime tu email 👇",
         teclado,
     )
 
@@ -248,7 +246,7 @@ async def _procesar_email_vip(update: Update, context: ContextTypes.DEFAULT_TYPE
     # rompería el parseo de Markdown si se interpola sin escapar.
     email_seguro = escape_markdown(email, version=1)
     await _mostrar(
-        update, context, f"¿Este es el email de tu cuenta de MercadoPago: *{email_seguro}*?", teclado
+        update, context, f"¿Este es tu correo: *{email_seguro}*?", teclado
     )
 
 
@@ -266,6 +264,7 @@ async def cb_confirmar_email_vip(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     telegram_user_id = update.effective_user.id
+    await db.actualizar_email(context.bot_data["db_pool"], telegram_user_id, CANAL_ID_VIP, email)
     init_point = await _crear_preapproval(telegram_user_id, email, context)
     if not init_point:
         await _mostrar(
@@ -285,8 +284,7 @@ async def cb_reescribir_email_vip(update: Update, context: ContextTypes.DEFAULT_
     teclado = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")]])
     await _mostrar(
         update, context,
-        "Dale, escribí tu email de nuevo. Lo encontrás en la app de MercadoPago, en tu perfil "
-        "(el ícono de arriba).",
+        "Dale, escribí tu email de nuevo:",
         teclado,
     )
 
