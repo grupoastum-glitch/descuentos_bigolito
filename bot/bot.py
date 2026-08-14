@@ -225,6 +225,25 @@ async def _crear_preapproval(telegram_user_id: int, email: str, context: Context
     return resultado["response"]["init_point"]
 
 
+async def _avisar_pago_pendiente_vencido(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Edita el mensaje del intento de pago anterior (si lo hay) para avisar que ese link ya no
+    sirve — solo prolijidad visual, la preapproval de atrás ya se cancela aparte
+    (_cancelar_preapprovals_pendientes). Solo recuerda el intento inmediatamente anterior de esta
+    misma sesión del bot; si no lo encuentra o falló editarlo (mensaje borrado, >48hs, etc.) no
+    pasa nada, no es crítico."""
+    msg_id = context.user_data.pop("pago_pendiente_msg_id", None)
+    chat_id = context.user_data.pop("pago_pendiente_chat_id", None)
+    if not msg_id:
+        return
+    try:
+        await context.bot.edit_message_text(
+            chat_id=chat_id, message_id=msg_id,
+            text="Este link de pago ya no es válido — generamos uno nuevo más abajo 👇",
+        )
+    except Exception:
+        pass
+
+
 async def _cancelar_preapprovals_pendientes(
     telegram_user_id: int, email: str, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -299,6 +318,7 @@ async def cb_confirmar_email_vip(update: Update, context: ContextTypes.DEFAULT_T
 
     telegram_user_id = update.effective_user.id
     await db.actualizar_email(context.bot_data["db_pool"], telegram_user_id, CANAL_ID_VIP, email)
+    await _avisar_pago_pendiente_vencido(context)
     await _cancelar_preapprovals_pendientes(telegram_user_id, email, context)
     init_point = await _crear_preapproval(telegram_user_id, email, context)
     if not init_point:
@@ -309,6 +329,8 @@ async def cb_confirmar_email_vip(update: Update, context: ContextTypes.DEFAULT_T
 
     teclado = InlineKeyboardMarkup([[InlineKeyboardButton("💳 Pagar suscripción", url=init_point)]])
     await _mostrar(update, context, "Listo 🙌 Tocá el botón para completar el pago y activar tu VIP:", teclado)
+    context.user_data["pago_pendiente_msg_id"] = query.message.message_id
+    context.user_data["pago_pendiente_chat_id"] = update.effective_chat.id
 
 
 async def cb_reescribir_email_vip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
