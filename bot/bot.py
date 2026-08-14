@@ -162,9 +162,16 @@ async def cb_suscribirme_vip(update: Update, context: ContextTypes.DEFAULT_TYPE)
     vip = config.get("vip") or {}
     intro = f"👑 *{vip['descripcion']}*\n\n" if vip.get("descripcion") else ""
 
+    # Si ya está activo, cortamos acá — dejarlo seguir podría terminar en una segunda preapproval
+    # authorized en paralelo (doble cobro real), no solo una pendiente duplicada.
+    telegram_user_id = update.effective_user.id
+    if await db.esta_activo(context.bot_data["db_pool"], telegram_user_id, CANAL_ID_VIP):
+        teclado = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")]])
+        await _mostrar(update, context, "Ya tenés tu suscripción VIP activa ✅", teclado)
+        return
+
     # Si ya se suscribió antes con éxito, se saltea pedir el email de nuevo — se reusa la misma
     # pantalla de confirmación que el flujo normal (cb_confirmar_email_vip/cb_reescribir_email_vip).
-    telegram_user_id = update.effective_user.id
     email_conocido = await db.obtener_email(context.bot_data["db_pool"], telegram_user_id, CANAL_ID_VIP)
     if email_conocido:
         context.user_data["esperando_email_vip"] = False
