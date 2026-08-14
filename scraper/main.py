@@ -139,7 +139,7 @@ async def _correr_falabella(sesion: FetcherSession, repo_dir: Path) -> tuple[lis
                     "corridas anteriores, no queda nada nuevo para probar",
                     len(candidatas),
                 )
-            resultado = descubrimiento.elegir_url_ofertas(candidatas_nuevas)
+            resultado = await asyncio.to_thread(descubrimiento.elegir_url_ofertas, candidatas_nuevas)
 
             if resultado and resultado.confianza == "alta":
                 log.info(
@@ -171,7 +171,8 @@ async def _correr_falabella(sesion: FetcherSession, repo_dir: Path) -> tuple[lis
             # repo — hay que publicarlo ahora, aparte, porque el resto de la corrida
             # de Falabella termina acá y nunca llega al commit final de más abajo.
             if (repo_dir / config.RUTA_DESCUBRIMIENTO_FALLIDOS).exists():
-                git_publish.publicar_cambios(
+                await asyncio.to_thread(
+                    git_publish.publicar_cambios,
                     repo_dir,
                     rutas=[config.RUTA_DESCUBRIMIENTO_FALLIDOS],
                     mensaje="chore(descubrimiento): registro de intento fallido",
@@ -245,26 +246,35 @@ async def _correr() -> None:
         return
 
     try:
-        # procesar() (upsert a Postgres) se llama tienda por tienda, apenas cada una termina de
-        # scrapear — no se espera a que las 4 terminen. Así, si la corrida se corta a mitad de
-        # camino (crash, redeploy), el estado de las tiendas que sí alcanzaron a terminar ya
-        # quedó guardado, en vez de perderse. El envío a Telegram sigue siendo al final, con
-        # todas las tiendas mezcladas (ver shuffle más abajo), para que no se note el orden de
-        # scrapeo.
+        # Las tiendas se scrapean todas en paralelo (asyncio.gather más abajo), pero cada una
+        # sigue escribiendo su resultado a Postgres (procesar()) apenas ELLA termina, sin
+        # esperar a las demás — mismo motivo que antes de paralelizar: si la corrida se corta a
+        # mitad de camino (crash, redeploy), el estado de las tiendas que sí alcanzaron a
+        # terminar ya quedó guardado, en vez de perderse. El envío a Telegram sigue siendo al
+        # final, con todas las tiendas mezcladas (ver shuffle más abajo), para que no se note el
+        # orden de scrapeo.
+        async def _procesar_tienda(sesion, tienda) -> list[dict]:
+            runner = _RUNNERS[tienda.id]
+            detectados, ok = await runner(sesion, repo_dir)
+            candidatas: list[dict] = []
+            if ok:
+                candidatas = await ofertas_writer.procesar(pool, detectados, tienda)
+
+            if tienda.id != "fal":  # Falabella ya tiene su propia alerta (ver descubrimiento)
+                fallos = monitoreo_tiendas.registrar_resultado(repo_dir, tienda.id, ok)
+                if fallos and fallos % config.FALLOS_TIENDA_ANTES_DE_ALERTA == 0:
+                    await telegram_publisher.avisar_admin(
+                        f"{tienda.nombre} lleva {fallos} corridas fallando seguidas. Requiere revisión manual."
+                    )
+            return candidatas
+
         todas_candidatas: list[dict] = []
         async with FetcherSession(impersonate=config.USER_AGENT_IMPERSONATE, timeout=config.HTTP_TIMEOUT_SEGUNDOS) as sesion:
-            for tienda in config.TIENDAS:
-                runner = _RUNNERS[tienda.id]
-                detectados, ok = await runner(sesion, repo_dir)
-                if ok:
-                    todas_candidatas.extend(await ofertas_writer.procesar(pool, detectados, tienda))
-
-                if tienda.id != "fal":  # Falabella ya tiene su propia alerta (ver descubrimiento)
-                    fallos = monitoreo_tiendas.registrar_resultado(repo_dir, tienda.id, ok)
-                    if fallos and fallos % config.FALLOS_TIENDA_ANTES_DE_ALERTA == 0:
-                        await telegram_publisher.avisar_admin(
-                            f"{tienda.nombre} lleva {fallos} corridas fallando seguidas. Requiere revisión manual."
-                        )
+            resultados = await asyncio.gather(*(
+                _procesar_tienda(sesion, tienda) for tienda in config.TIENDAS
+            ))
+            for candidatas in resultados:
+                todas_candidatas.extend(candidatas)
 
         # descuentos así de extremos suelen ser errores de precio del comercio — se postean primero
         # (no se mezclan con el resto) y se avisa aparte al admin para que pueda verificar/comprar
