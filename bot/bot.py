@@ -10,6 +10,7 @@ import json
 import logging
 import os
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import mercadopago
 from dotenv import load_dotenv
@@ -31,6 +32,7 @@ import db
 RUTA_CONFIG = Path(__file__).resolve().parent.parent / "web" / "data" / "config.json"
 
 CANAL_ID_VIP = "vip"  # ver pagos/config.py::CANAL_CHAT_ID — mismo id en ambos lados
+TZ_CHILE = ZoneInfo("America/Santiago")  # acceso_hasta se guarda en UTC — convertir antes de mostrar
 # mismo back_url usado al crear el Preapproval Plan (ver PLAN_canal_vip_mercadopago.md) — a dónde
 # vuelve el usuario después de autorizar el pago en MercadoPago.
 BACK_URL_MERCADOPAGO = "https://t.me/descuentos_bigolito_cl_bot"
@@ -166,8 +168,13 @@ async def cb_suscribirme_vip(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # authorized en paralelo (doble cobro real), no solo una pendiente duplicada.
     telegram_user_id = update.effective_user.id
     if await db.esta_activo(context.bot_data["db_pool"], telegram_user_id, CANAL_ID_VIP):
+        texto = "Ya tenés tu suscripción VIP activa ✅"
+        acceso_hasta = await db.obtener_acceso_hasta(context.bot_data["db_pool"], telegram_user_id, CANAL_ID_VIP)
+        if acceso_hasta:
+            fecha_local = acceso_hasta.astimezone(TZ_CHILE).strftime("%d/%m/%Y")
+            texto += f"\n\nTenés acceso hasta el {fecha_local}."
         teclado = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")]])
-        await _mostrar(update, context, "Ya tenés tu suscripción VIP activa ✅", teclado)
+        await _mostrar(update, context, texto, teclado)
         return
 
     # Si ya se suscribió antes con éxito, se saltea pedir el email de nuevo — se reusa la misma
