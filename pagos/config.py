@@ -23,4 +23,5 @@ MERCADOPAGO_WEBHOOK_SECRET = os.environ.get("MERCADOPAGO_WEBHOOK_SECRET", "")
 # línea acá, sin tocar el resto del código — mismo criterio de extensibilidad.
 CANAL_CHAT_ID = {
     "vip": "-1004438197572",
+    "test2": "CAMBIAR_POR_CHAT_ID_REAL",  # canal de prueba, todavía no existe en Telegram
 }

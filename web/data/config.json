@@ -21,6 +21,29 @@
     "descripcion": "50% y más, por $3.000/mes.",
     "nota": "Pago seguro con MercadoPago, cancelás cuando quieras."
   },
+  "canales_pagos": [
+    {
+      "canal_id": "vip",
+      "nombre": "Descuentos VIP",
+      "nombre_corto": "VIP",
+      "descripcion": "50% y más, por $3.000/mes.",
+      "nota": "Pago seguro con MercadoPago, cancelás cuando quieras.",
+      "monto": 1000,
+      "frecuencia": 1,
+      "frecuencia_tipo": "days",
+      "visible": true
+    },
+    {
+      "canal_id": "test2",
+      "nombre": "Canal Test 2",
+      "nombre_corto": "Canal Test 2",
+      "descripcion": "Canal de prueba interno.",
+      "monto": 3000,
+      "frecuencia": 1,
+      "frecuencia_tipo": "months",
+      "visible": false
+    }
+  ],
   "redes": [
     { "nombre": "Bot de Telegram", "url": "https://t.me/descuentos_bigolito_cl_bot", "icono": "send" }
   ],

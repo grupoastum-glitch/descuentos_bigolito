@@ -31,7 +31,14 @@ import db
 
 RUTA_CONFIG = Path(__file__).resolve().parent.parent / "web" / "data" / "config.json"
 
-CANAL_ID_VIP = "vip"  # ver pagos/config.py::CANAL_CHAT_ID — mismo id en ambos lados
+# chat_id numérico por canal pago — duplicado a propósito de pagos/config.py::CANAL_CHAT_ID:
+# bot/ y pagos/ son servicios independientes (containers separados, sin imports cruzados), mismo
+# criterio de "cada uno autocontenido" que ya usa el resto del proyecto. Sumar un canal pago nuevo
+# es agregar una línea acá Y en pagos/config.py.
+CANAL_CHAT_ID = {
+    "vip": "-1004438197572",
+    "test2": "CAMBIAR_POR_CHAT_ID_REAL",  # canal de prueba, todavía no existe en Telegram
+}
 TZ_CHILE = ZoneInfo("America/Santiago")  # acceso_hasta se guarda en UTC — convertir antes de mostrar
 # mismo back_url usado al crear el Preapproval Plan (ver PLAN_canal_vip_mercadopago.md) — a dónde
 # vuelve el usuario después de autorizar el pago en MercadoPago.
@@ -49,6 +56,7 @@ CONFIG_MINIMA = {
     "marca": {"nombre": "Descuentos Bigolito", "emoji": "🐶", "saludo": "Hola!", "descripcion": ""},
     "canales": [],
     "vip": None,
+    "canales_pagos": [],
     "redes": [],
     "contacto": None,
     "bot": {"descripcion_larga": "", "descripcion_corta": "", "comandos": []},
@@ -65,44 +73,54 @@ def cargar_config() -> dict:
         return CONFIG_MINIMA
 
 
+def _canales_pagos(config: dict) -> dict[str, dict]:
+    """Canales pagos definidos en config.json, indexados por canal_id."""
+    return {c["canal_id"]: c for c in config.get("canales_pagos") or [] if c.get("canal_id")}
+
+
 def teclado_inicio(config: dict) -> InlineKeyboardMarkup | None:
-    """Menú de botones del /start: canales de ofertas, VIP y contacto."""
+    """Menú de botones del /start: canales de ofertas, canales pagos visibles y contacto."""
     ofertas = [c for c in config["canales"] if c.get("tipo", "oferta") == "oferta"]
-    vip = config.get("vip")
     contacto = config.get("contacto")
 
     filas = [[InlineKeyboardButton(c["nombre"], url=c["url"])] for c in ofertas if c.get("url")]
-    if vip:
-        # el canal VIP es privado y pago (ver PLAN_canal_vip_mercadopago.md) — el botón dispara
-        # el flujo de suscripción (pide email, genera el link de pago de MercadoPago) en vez de
-        # linkear directo al canal. La web usa vip["url"] para su propio botón VIP, pero apunta
-        # al bot (mismo flujo), no al canal directo — el canal exige creates_join_request y
-        # rechazaría a cualquiera sin suscripción activa (ver cb_solicitud_union).
-        filas.append([InlineKeyboardButton(f"{vip['nombre']} 👑", callback_data="suscribirme_vip")])
+    for canal in config.get("canales_pagos") or []:
+        if not canal.get("visible", True):
+            continue
+        # canal pago = privado (ver PLAN_canal_vip_mercadopago.md) — el botón dispara el flujo de
+        # suscripción (pide email, genera el link de pago de MercadoPago) en vez de linkear
+        # directo al canal, que exige creates_join_request y rechazaría a cualquiera sin
+        # suscripción activa (ver cb_solicitud_union). La web tiene su propio botón fijo para el
+        # VIP (clave "vip" de config.json) que apunta al bot, mismo flujo.
+        filas.append(
+            [InlineKeyboardButton(f"{canal['nombre']} 👑", callback_data=f"suscribirme_{canal['canal_id']}")]
+        )
     if contacto and contacto.get("url"):
         filas.append([InlineKeyboardButton("Háblame 💬", url=contacto["url"])])
     return InlineKeyboardMarkup(filas) if filas else None
 
 
 def texto_bienvenida(config: dict) -> str:
-    """Saludo del /start — incluye directo la explicación de los dos niveles (gratis/VIP) y el
+    """Saludo del /start — incluye directo la explicación de los niveles (gratis + pagos) y el
     pago, para no depender de un botón "Información" aparte que solo agregaba un tap extra."""
     marca = config["marca"]
     nombre = " ".join(filter(None, [marca.get("nombre"), marca.get("emoji")]))
     texto = f"{marca.get('saludo', '')}\n\nSoy el bot de *{nombre}*. {marca.get('descripcion', '')}"
 
-    # Sin repetir el nombre del canal/VIP acá: el botón de abajo ya lo dice, así que cada línea
-    # va directo al beneficio en vez de duplicar "Descuentos 25%+"/"Descuentos VIP" en el texto.
+    # Sin repetir el nombre del canal acá: el botón de abajo ya lo dice, así que cada línea va
+    # directo al beneficio en vez de duplicar el nombre en el texto.
     ofertas = [c for c in config["canales"] if c.get("tipo", "oferta") == "oferta"]
     for canal in ofertas:
         if canal.get("descripcion"):
             texto += f"\n\n🏷️ *{canal['descripcion']}*"
 
-    vip = config.get("vip")
-    if vip and vip.get("descripcion"):
-        texto += f"\n\n*{vip['descripcion']}*"
-        if vip.get("nota"):
-            texto += f"\n_{vip['nota']}_"
+    for canal in config.get("canales_pagos") or []:
+        if not canal.get("visible", True):
+            continue
+        if canal.get("descripcion"):
+            texto += f"\n\n*{canal['descripcion']}*"
+            if canal.get("nota"):
+                texto += f"\n_{canal['nota']}_"
 
     return texto
 
@@ -113,7 +131,7 @@ def texto_bienvenida(config: dict) -> str:
 async def _mostrar(
     update: Update, context: ContextTypes.DEFAULT_TYPE, texto: str, teclado: InlineKeyboardMarkup | None
 ) -> None:
-    """Transforma el mensaje del flujo de menú/VIP en vez de acumular mensajes nuevos.
+    """Transforma el mensaje del flujo de menú/suscripción en vez de acumular mensajes nuevos.
 
     Si el update viene de un botón (callback_query), edita ese mismo mensaje — es el que el
     usuario acaba de tocar. Si viene de texto libre (ej. el email), edita el último mensaje del
@@ -139,37 +157,53 @@ async def _mostrar(
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     config = cargar_config()
+    # deep link `/start sus_<canal_id>` (ej. https://t.me/bot?start=sus_test2): dispara el flujo
+    # de suscripción de un canal directo, sin pasar por el menú — así se puede probar un canal con
+    # "visible": false sin exponerlo como botón a usuarios reales.
+    if context.args and context.args[0].startswith("sus_"):
+        canal_id = context.args[0].removeprefix("sus_")
+        await _iniciar_suscripcion(update, context, canal_id, config)
+        return
     await _mostrar(update, context, texto_bienvenida(config), teclado_inicio(config))
 
 
 async def cb_volver_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Vuelve al menú principal y limpia cualquier estado de flujo en curso (email VIP pendiente
-    de escribir o de confirmar) — mismo callback_data se reusa como "Cancelar" en esos flujos."""
+    """Vuelve al menú principal y limpia cualquier estado de flujo en curso (email pendiente de
+    escribir o de confirmar, canal en curso) — mismo callback_data se reusa como "Cancelar" en
+    esos flujos."""
     query = update.callback_query
     await query.answer()
     context.user_data["esperando_email_vip"] = False
     context.user_data.pop("email_vip_pendiente", None)
+    context.user_data.pop("canal_id_pendiente", None)
     config = cargar_config()
     await _mostrar(update, context, texto_bienvenida(config), teclado_inicio(config))
 
 
-async def cb_suscribirme_vip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Primer paso del flujo de suscripción: MercadoPago exige el email del pagador para crear
-    la preapproval (no alcanza con el user_id de Telegram). Si ya hay un email guardado de una
-    suscripción anterior, se salta directo a confirmarlo; si no, se pide acá y se procesa en el
-    próximo mensaje de texto (ver mensaje_no_reconocido, que revisa ese estado primero)."""
-    query = update.callback_query
-    await query.answer()
-    config = cargar_config()
-    vip = config.get("vip") or {}
-    intro = f"👑 *{vip['descripcion']}*\n\n" if vip.get("descripcion") else ""
+async def _iniciar_suscripcion(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, canal_id: str, config: dict
+) -> None:
+    """Primer paso del flujo de suscripción para un canal dado: MercadoPago exige el email del
+    pagador para crear la preapproval (no alcanza con el user_id de Telegram). Si ya hay un email
+    guardado de una suscripción anterior, se salta directo a confirmarlo; si no, se pide acá y se
+    procesa en el próximo mensaje de texto (ver mensaje_no_reconocido, que revisa ese estado
+    primero)."""
+    canal_cfg = _canales_pagos(config).get(canal_id)
+    if not canal_cfg:
+        log.warning("Intento de suscripción a un canal_id desconocido: %r", canal_id)
+        teclado = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")]])
+        await _mostrar(update, context, "Ese canal ya no está disponible.", teclado)
+        return
+
+    context.user_data["canal_id_pendiente"] = canal_id
+    intro = f"👑 *{canal_cfg['descripcion']}*\n\n" if canal_cfg.get("descripcion") else ""
 
     # Si ya está activo, cortamos acá — dejarlo seguir podría terminar en una segunda preapproval
     # authorized en paralelo (doble cobro real), no solo una pendiente duplicada.
     telegram_user_id = update.effective_user.id
-    if await db.esta_activo(context.bot_data["db_pool"], telegram_user_id, CANAL_ID_VIP):
-        texto = "Ya tenés tu suscripción VIP activa ✅"
-        acceso_hasta = await db.obtener_acceso_hasta(context.bot_data["db_pool"], telegram_user_id, CANAL_ID_VIP)
+    if await db.esta_activo(context.bot_data["db_pool"], telegram_user_id, canal_id):
+        texto = f"Ya tenés tu suscripción a {canal_cfg['nombre']} activa ✅"
+        acceso_hasta = await db.obtener_acceso_hasta(context.bot_data["db_pool"], telegram_user_id, canal_id)
         if acceso_hasta:
             fecha_local = acceso_hasta.astimezone(TZ_CHILE).strftime("%d/%m/%Y")
             texto += f"\n\nTenés acceso hasta el {fecha_local}."
@@ -179,7 +213,7 @@ async def cb_suscribirme_vip(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # Si ya se suscribió antes con éxito, se saltea pedir el email de nuevo — se reusa la misma
     # pantalla de confirmación que el flujo normal (cb_confirmar_email_vip/cb_reescribir_email_vip).
-    email_conocido = await db.obtener_email(context.bot_data["db_pool"], telegram_user_id, CANAL_ID_VIP)
+    email_conocido = await db.obtener_email(context.bot_data["db_pool"], telegram_user_id, canal_id)
     if email_conocido:
         context.user_data["esperando_email_vip"] = False
         context.user_data["email_vip_pendiente"] = email_conocido
@@ -205,21 +239,34 @@ async def cb_suscribirme_vip(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
 
 
-async def _crear_preapproval(telegram_user_id: int, email: str, context: ContextTypes.DEFAULT_TYPE) -> str | None:
-    """Crea la preapproval en MercadoPago y devuelve el init_point, o None si falló (ya logueado)."""
+async def cb_suscribirme(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Punto de entrada desde un botón del menú o desde el DM de "Renovar suscripción"
+    (pagos/telegram_client.py::expulsar) — el canal_id viaja en el callback_data."""
+    query = update.callback_query
+    await query.answer()
+    canal_id = query.data.removeprefix("suscribirme_")
+    config = cargar_config()
+    await _iniciar_suscripcion(update, context, canal_id, config)
+
+
+async def _crear_preapproval(
+    telegram_user_id: int, email: str, canal_cfg: dict, context: ContextTypes.DEFAULT_TYPE
+) -> str | None:
+    """Crea la preapproval en MercadoPago para el canal indicado y devuelve el init_point, o None
+    si falló (ya logueado)."""
     try:
         # Sin preapproval_plan_id a propósito: esa variante exige card_token_id (tarjeta
         # tokenizada de antemano, pensado para un checkout propio) y no genera un init_point
         # para redirigir — la que sí lo genera es esta, "sin plan asociado" con status=pending,
         # confirmado contra la documentación oficial tras un 400 real (card_token_id is required).
         resultado = context.bot_data["mp_sdk"].preapproval().create({
-            "reason": "Suscripción VIP — Descuentos Bigolito",
-            "external_reference": f"{telegram_user_id}:{CANAL_ID_VIP}",
+            "reason": f"Suscripción {canal_cfg.get('nombre_corto', canal_cfg['nombre'])} — Descuentos Bigolito",
+            "external_reference": f"{telegram_user_id}:{canal_cfg['canal_id']}",
             "payer_email": email,
             "auto_recurring": {
-                "frequency": context.bot_data["mp_frecuencia"],
-                "frequency_type": context.bot_data["mp_frecuencia_tipo"],
-                "transaction_amount": context.bot_data["mp_monto"],
+                "frequency": canal_cfg["frecuencia"],
+                "frequency_type": canal_cfg["frecuencia_tipo"],
+                "transaction_amount": canal_cfg["monto"],
                 "currency_id": "CLP",
             },
             "back_url": BACK_URL_MERCADOPAGO,
@@ -252,16 +299,16 @@ async def _avisar_pago_pendiente_vencido(context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def _cancelar_preapprovals_pendientes(
-    telegram_user_id: int, email: str, context: ContextTypes.DEFAULT_TYPE
+    telegram_user_id: int, canal_id: str, email: str, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Cancela cualquier preapproval 'pending' que haya quedado de un intento anterior sin
-    completar, para no acumular duplicadas cada vez que el usuario reintenta (bug reproducido en
-    vivo: 6 preapprovals para el mismo usuario en una sola tanda de pruebas). La API de
-    MercadoPago no permite buscar por external_reference/status directo (confirmado contra
+    """Cancela cualquier preapproval 'pending' de este canal que haya quedado de un intento
+    anterior sin completar, para no acumular duplicadas cada vez que el usuario reintenta (bug
+    reproducido en vivo: 6 preapprovals para el mismo usuario en una sola tanda de pruebas). La
+    API de MercadoPago no permite buscar por external_reference/status directo (confirmado contra
     mercadopago/resources/preapproval.py y la doc de /preapproval/search) — se busca por
     payer_email y se filtra acá. Best-effort: un fallo acá no debe impedir que el usuario cree su
     preapproval nueva."""
-    referencia_esperada = f"{telegram_user_id}:{CANAL_ID_VIP}"
+    referencia_esperada = f"{telegram_user_id}:{canal_id}"
     try:
         resultado = context.bot_data["mp_sdk"].preapproval().search({"payer_email": email})
         resultado.raise_for_status()
@@ -278,9 +325,9 @@ async def _cancelar_preapprovals_pendientes(
             log.exception("Falló la cancelación de la preapproval pendiente %s", item["id"])
 
 
-def teclado_error_preapproval() -> InlineKeyboardMarkup:
+def teclado_error_preapproval(canal_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔁 Reintentar", callback_data="suscribirme_vip")],
+        [InlineKeyboardButton("🔁 Reintentar", callback_data=f"suscribirme_{canal_id}")],
         [InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")],
     ])
 
@@ -313,29 +360,34 @@ async def _procesar_email_vip(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def cb_confirmar_email_vip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
+    canal_id = context.user_data.get("canal_id_pendiente")
     # .pop() en vez de .get(): un doble clic no encuentra email la segunda vez, evitando
     # generar dos preapprovals para el mismo pago.
     email = context.user_data.pop("email_vip_pendiente", None)
-    if not email:
-        teclado = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("👑 Suscribirme al VIP", callback_data="suscribirme_vip")]]
-        )
-        await _mostrar(update, context, "Esta confirmación ya venció. Empecemos de nuevo:", teclado)
+    config = cargar_config()
+    canal_cfg = _canales_pagos(config).get(canal_id) if canal_id else None
+    if not email or not canal_cfg:
+        teclado = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")]])
+        await _mostrar(update, context, "Esta confirmación ya venció. Volvé a tocar el botón para empezar de nuevo:", teclado)
         return
 
     telegram_user_id = update.effective_user.id
-    await db.actualizar_email(context.bot_data["db_pool"], telegram_user_id, CANAL_ID_VIP, email)
+    await db.actualizar_email(context.bot_data["db_pool"], telegram_user_id, canal_id, email)
     await _avisar_pago_pendiente_vencido(context)
-    await _cancelar_preapprovals_pendientes(telegram_user_id, email, context)
-    init_point = await _crear_preapproval(telegram_user_id, email, context)
+    await _cancelar_preapprovals_pendientes(telegram_user_id, canal_id, email, context)
+    init_point = await _crear_preapproval(telegram_user_id, email, canal_cfg, context)
     if not init_point:
         await _mostrar(
-            update, context, "No pudimos generar el link de pago. Probá de nuevo:", teclado_error_preapproval()
+            update, context, "No pudimos generar el link de pago. Probá de nuevo:",
+            teclado_error_preapproval(canal_id),
         )
         return
 
     teclado = InlineKeyboardMarkup([[InlineKeyboardButton("💳 Pagar suscripción", url=init_point)]])
-    await _mostrar(update, context, "Listo 🙌 Tocá el botón para completar el pago y activar tu VIP:", teclado)
+    await _mostrar(
+        update, context,
+        f"Listo 🙌 Tocá el botón para completar el pago y activar tu {canal_cfg['nombre']}:", teclado,
+    )
     context.user_data["pago_pendiente_msg_id"] = query.message.message_id
     context.user_data["pago_pendiente_chat_id"] = update.effective_chat.id
 
@@ -362,15 +414,27 @@ async def mensaje_no_reconocido(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def cb_solicitud_union(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """El link de invitación al canal VIP (pagos/telegram_client.py::invitar) ya no deja entrar
+    """El link de invitación a un canal pago (pagos/telegram_client.py::invitar) ya no deja entrar
     directo — pide aprobación a propósito, porque un link "de un solo uso" no verifica quién lo
     usa (si el suscriptor lo reenvía antes de entrar, cualquiera podría ocupar ese cupo). Acá se
-    aprueba o rechaza comparando la identidad real de quien pide entrar contra su suscripción."""
+    aprueba o rechaza comparando la identidad real de quien pide entrar contra su suscripción —
+    primero hay que ubicar a qué canal_id corresponde el chat de la solicitud."""
     solicitud = update.chat_join_request
-    activo = await db.esta_activo(context.bot_data["db_pool"], solicitud.from_user.id, CANAL_ID_VIP)
+    chat_id = str(solicitud.chat.id)
+    canal_id = next((cid for cid, cid_chat in CANAL_CHAT_ID.items() if cid_chat == chat_id), None)
+    if canal_id is None:
+        log.warning("Solicitud de unión a un chat_id no configurado: %s", chat_id)
+        await solicitud.decline()
+        return
+
+    config = cargar_config()
+    canal_cfg_rechazo = _canales_pagos(config).get(canal_id, {})
+    nombre_canal = canal_cfg_rechazo.get("nombre_corto") or canal_cfg_rechazo.get("nombre", "el canal")
+
+    activo = await db.esta_activo(context.bot_data["db_pool"], solicitud.from_user.id, canal_id)
     if activo:
         await solicitud.approve()
-        log.info("Solicitud de unión aprobada: %s", solicitud.from_user.id)
+        log.info("Solicitud de unión aprobada: %s (canal %s)", solicitud.from_user.id, canal_id)
         try:
             # Telegram no siempre lleva al usuario al canal solo tras aprobar una solicitud de
             # unión — sin este aviso, un usuario común se queda esperando sin saber que ya puede
@@ -392,16 +456,19 @@ async def cb_solicitud_union(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
     else:
         await solicitud.decline()
-        log.info("Solicitud de unión rechazada (sin suscripción activa): %s", solicitud.from_user.id)
+        log.info(
+            "Solicitud de unión rechazada (sin suscripción activa): %s (canal %s)",
+            solicitud.from_user.id, canal_id,
+        )
         try:
             await context.bot.send_message(
                 chat_id=solicitud.from_user.id,
                 text=(
                     "No pudimos darte acceso: no encontramos una suscripción activa a tu nombre. "
-                    "Si ya pagaste y creés que es un error, escribinos. Si no, sumate al VIP acá:"
+                    f"Si ya pagaste y creés que es un error, escribinos. Si no, sumate a {nombre_canal} acá:"
                 ),
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("👑 Suscribirme al VIP", callback_data="suscribirme_vip")]]
+                    [[InlineKeyboardButton(f"👑 Suscribirme a {nombre_canal}", callback_data=f"suscribirme_{canal_id}")]]
                 ),
             )
         except TelegramError:
@@ -462,14 +529,8 @@ def main() -> None:
         raise SystemExit("Falta TELEGRAM_BOT_TOKEN en bot/.env")
 
     mp_access_token = os.environ.get("MERCADOPAGO_ACCESS_TOKEN")
-    mp_monto = os.environ.get("MERCADOPAGO_SUSCRIPCION_MONTO")
-    mp_frecuencia = os.environ.get("MERCADOPAGO_SUSCRIPCION_FRECUENCIA")
-    mp_frecuencia_tipo = os.environ.get("MERCADOPAGO_SUSCRIPCION_FRECUENCIA_TIPO")
-    if not all([mp_access_token, mp_monto, mp_frecuencia, mp_frecuencia_tipo]):
-        raise SystemExit(
-            "Falta MERCADOPAGO_ACCESS_TOKEN, MERCADOPAGO_SUSCRIPCION_MONTO, "
-            "MERCADOPAGO_SUSCRIPCION_FRECUENCIA o MERCADOPAGO_SUSCRIPCION_FRECUENCIA_TIPO en bot/.env"
-        )
+    if not mp_access_token:
+        raise SystemExit("Falta MERCADOPAGO_ACCESS_TOKEN en bot/.env")
 
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
@@ -478,12 +539,9 @@ def main() -> None:
     app = Application.builder().token(token).post_init(_post_init).build()
     app.bot_data["database_url"] = database_url
     app.bot_data["mp_sdk"] = mercadopago.SDK(mp_access_token)
-    app.bot_data["mp_monto"] = int(mp_monto)
-    app.bot_data["mp_frecuencia"] = int(mp_frecuencia)
-    app.bot_data["mp_frecuencia_tipo"] = mp_frecuencia_tipo
 
     app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CallbackQueryHandler(cb_suscribirme_vip, pattern="^suscribirme_vip$"))
+    app.add_handler(CallbackQueryHandler(cb_suscribirme, pattern="^suscribirme_"))
     app.add_handler(CallbackQueryHandler(cb_confirmar_email_vip, pattern="^confirmar_email_vip$"))
     app.add_handler(CallbackQueryHandler(cb_reescribir_email_vip, pattern="^reescribir_email_vip$"))
     app.add_handler(CallbackQueryHandler(cb_volver_menu, pattern="^volver_menu$"))

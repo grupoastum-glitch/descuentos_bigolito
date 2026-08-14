@@ -53,9 +53,9 @@ async def invitar(telegram_user_id: int, canal_id: str) -> None:
 async def expulsar(telegram_user_id: int, canal_id: str) -> None:
     """Saca al usuario del canal — ban seguido de unban inmediato (equivalente a un "kick": lo
     saca ahora, pero no le bloquea volver a entrar si paga de nuevo más adelante) — y le avisa por
-    DM con un botón para renovar. El botón reusa callback_data="suscribirme_vip": lo captura
-    bot/bot.py::cb_suscribirme_vip sin importar que este mensaje lo haya mandado el servicio de
-    pagos, porque los clics le llegan a quien esté haciendo run_polling() (el servicio bot)."""
+    DM con un botón para renovar. El botón reusa callback_data=f"suscribirme_{canal_id}": lo
+    captura bot/bot.py::cb_suscribirme sin importar que este mensaje lo haya mandado el servicio
+    de pagos, porque los clics le llegan a quien esté haciendo run_polling() (el servicio bot)."""
     chat_id = config.CANAL_CHAT_ID[canal_id]
     bot = Bot(token=config.TELEGRAM_BOT_TOKEN)
     async with bot:
@@ -68,12 +68,12 @@ async def expulsar(telegram_user_id: int, canal_id: str) -> None:
 
         try:
             teclado = InlineKeyboardMarkup(
-                [[InlineKeyboardButton("Renovar suscripción", callback_data="suscribirme_vip")]]
+                [[InlineKeyboardButton("Renovar suscripción", callback_data=f"suscribirme_{canal_id}")]]
             )
             await bot.send_message(
                 chat_id=telegram_user_id,
                 text=(
-                    "Tu acceso al canal VIP terminó. Si querés seguir recibiendo las ofertas "
+                    "Tu acceso a este canal terminó. Si querés seguir recibiendo las ofertas "
                     "exclusivas, renová tu suscripción:"
                 ),
                 reply_markup=teclado,
