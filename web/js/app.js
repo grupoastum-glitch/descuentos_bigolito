@@ -10,10 +10,11 @@ import { refrescarIconos, renderCanales, renderOfertas, renderRedes } from './re
    index.html; el nav se regenera solo. Las que estén aquí pero no en
    SECCIONES_ACTIVAS se pintan atenuadas como "próximamente". */
 const SECCIONES = [
-  { id: 'home', icono: 'home', etiqueta: 'Inicio' }
+  { id: 'home', icono: 'home', etiqueta: 'Inicio' },
+  { id: 'legal', icono: 'landmark', etiqueta: 'Legal' }
 ];
 
-const SECCIONES_ACTIVAS = ['home'];
+const SECCIONES_ACTIVAS = ['home', 'legal'];
 const CLAVE_TEMA = 'tema';
 
 let seccionActual = 'home';
