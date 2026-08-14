@@ -147,6 +147,30 @@ function ordenarPorFecha(a, b) {
   return fechaB - fechaA;
 }
 
+/* Las ofertas VIP reales (canal "ofertas_vip", ver scraper/config.py TIERS_DESCUENTO) se
+   destacan en la 1ra y 3ra tarjeta cuando existen, para que se noten sin scrollear. Si hay
+   menos de 2 VIP activas, esas posiciones caen de vuelta al orden normal por fecha — nunca se
+   inventa una VIP que no exista. */
+const POSICIONES_VIP_DESTACADO = [0, 2];
+
+function destacarVip(ofertas) {
+  const vip = ofertas.filter((o) => o.canal === 'ofertas_vip').sort(ordenarPorFecha);
+  const resto = ofertas.filter((o) => o.canal !== 'ofertas_vip').sort(ordenarPorFecha);
+  const resultado = [];
+  let iVip = 0;
+  let iResto = 0;
+  for (let pos = 0; pos < ofertas.length; pos++) {
+    if (POSICIONES_VIP_DESTACADO.includes(pos) && iVip < vip.length) {
+      resultado.push(vip[iVip++]);
+    } else if (iResto < resto.length) {
+      resultado.push(resto[iResto++]);
+    } else {
+      resultado.push(vip[iVip++]);
+    }
+  }
+  return resultado;
+}
+
 export async function cargarOfertas() {
   try {
     const datos = await leerJSON(RUTA_OFERTAS);
@@ -162,7 +186,7 @@ export async function cargarOfertas() {
 
     return {
       actualizado: fechaValida(datos?.actualizado),
-      ofertas: [...vistas.values()].sort(ordenarPorFecha).slice(0, MAX_OFERTAS),
+      ofertas: destacarVip([...vistas.values()]).slice(0, MAX_OFERTAS),
       error: false
     };
   } catch (error) {
