@@ -76,6 +76,14 @@ TIERS_DESCUENTO = [
 TIENDAS_GEEK = {"luffytoys", "geekz", "weplay"}
 UMBRAL_DESCUENTO_GEEK = 20  # mismo piso que DESCUENTO_MINIMO_WEB_PCT — decisión 2026-08-15
 
+# tiendas de la categoría "Deco Hogar" (ferretería/mejoramiento del hogar, ver Tiendas/paginas.md)
+# — mismo mecanismo que TIENDAS_GEEK: postean exclusivas a
+# CANAL_TELEGRAM_USERNAME["ofertas_deco_hogar"] si superan UMBRAL_DESCUENTO_DECO_HOGAR. Sodimac
+# se suma acá el día que se encuentre su página de ofertas (bloqueado por ahora, ver
+# Tiendas/paginas.md).
+TIENDAS_DECO_HOGAR = {"easy"}
+UMBRAL_DESCUENTO_DECO_HOGAR = 20  # mismo piso que geek — decisión 2026-08-15
+
 # cada cuántas horas se le da otra chance a un producto que sigue siendo récord (precio mínimo o
 # mayor descuento) pero no cambió desde la última vez que se publicó — evita que ofertas buenas
 # queden "enterradas" para suscriptores nuevos. Sin tope de publicaciones por día: un producto
@@ -93,6 +101,17 @@ CANAL_TELEGRAM_USERNAME = {
     "ofertas_40": "descuentos_bigolito",
     "ofertas_vip": "-1004438197572",
     "ofertas_geek": "-1003952570153",
+    "ofertas_deco_hogar": "-1003961858440",
+}
+
+# tienda_id -> (canal, umbral) para las categorías especiales (geek, deco hogar, ...) — cada una
+# postea exclusiva a su canal propio (no también a ofertas_40/ofertas_vip) si supera su umbral.
+# Construido desde TIENDAS_GEEK/TIENDAS_DECO_HOGAR para no repetir un `if tienda_id in ...` por
+# cada categoría nueva — se generalizó a este mapeo recién con la segunda categoría real
+# (deco hogar), no antes.
+_CANAL_ESPECIAL_POR_TIENDA = {
+    **{tid: ("ofertas_geek", UMBRAL_DESCUENTO_GEEK) for tid in TIENDAS_GEEK},
+    **{tid: ("ofertas_deco_hogar", UMBRAL_DESCUENTO_DECO_HOGAR) for tid in TIENDAS_DECO_HOGAR},
 }
 
 
@@ -104,11 +123,14 @@ def canal_para_descuento(pct: int) -> str | None:
 
 
 def canal_para_oferta(tienda_id: str, pct: int) -> str | None:
-    """Como canal_para_descuento(), pero primero chequea si la tienda es geek (TIENDAS_GEEK) —
-    esas van exclusivas a "ofertas_geek" (no también a ofertas_40/ofertas_vip) si superan
-    UMBRAL_DESCUENTO_GEEK. El resto de las tiendas cae al criterio de siempre, sin cambios."""
-    if tienda_id in TIENDAS_GEEK:
-        return "ofertas_geek" if pct >= UMBRAL_DESCUENTO_GEEK else None
+    """Como canal_para_descuento(), pero primero chequea si la tienda pertenece a una categoría
+    especial (_CANAL_ESPECIAL_POR_TIENDA) — esas van exclusivas a su canal propio (no también a
+    ofertas_40/ofertas_vip) si superan su umbral. El resto de las tiendas cae al criterio de
+    siempre, sin cambios."""
+    especial = _CANAL_ESPECIAL_POR_TIENDA.get(tienda_id)
+    if especial:
+        canal, umbral = especial
+        return canal if pct >= umbral else None
     return canal_para_descuento(pct)
 
 
@@ -195,6 +217,7 @@ TIENDAS = [
     Tienda(id="luffytoys", nombre="LuffyToys"),
     Tienda(id="geekz", nombre="Geekz"),
     Tienda(id="weplay", nombre="WePlay"),
+    Tienda(id="easy", nombre="Easy"),
 ]
 
 

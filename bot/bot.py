@@ -42,6 +42,7 @@ CANAL_CHAT_ID = {
     "vip": [
         ("-1004438197572", "VIP"),
         ("-1003952570153", "Geek VIP"),
+        ("-1003961858440", "Deco Hogar VIP"),
     ],
     "test2": [("CAMBIAR_POR_CHAT_ID_REAL", "Canal Test 2")],  # canal de prueba, todavía no existe en Telegram
 }
