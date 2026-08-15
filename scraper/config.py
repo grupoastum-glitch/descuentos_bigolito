@@ -78,10 +78,8 @@ UMBRAL_DESCUENTO_GEEK = 20  # mismo piso que DESCUENTO_MINIMO_WEB_PCT — decisi
 
 # tiendas de la categoría "Deco Hogar" (ferretería/mejoramiento del hogar, ver Tiendas/paginas.md)
 # — mismo mecanismo que TIENDAS_GEEK: postean exclusivas a
-# CANAL_TELEGRAM_USERNAME["ofertas_deco_hogar"] si superan UMBRAL_DESCUENTO_DECO_HOGAR. Sodimac
-# se suma acá el día que se encuentre su página de ofertas (bloqueado por ahora, ver
-# Tiendas/paginas.md).
-TIENDAS_DECO_HOGAR = {"easy"}
+# CANAL_TELEGRAM_USERNAME["ofertas_deco_hogar"] si superan UMBRAL_DESCUENTO_DECO_HOGAR.
+TIENDAS_DECO_HOGAR = {"easy", "sodimac"}
 UMBRAL_DESCUENTO_DECO_HOGAR = 20  # mismo piso que geek — decisión 2026-08-15
 
 # cada cuántas horas se le da otra chance a un producto que sigue siendo récord (precio mínimo o
@@ -218,6 +216,7 @@ TIENDAS = [
     Tienda(id="geekz", nombre="Geekz"),
     Tienda(id="weplay", nombre="WePlay"),
     Tienda(id="easy", nombre="Easy"),
+    Tienda(id="sodimac", nombre="Sodimac"),
 ]
 
 
