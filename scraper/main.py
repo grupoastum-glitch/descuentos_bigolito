@@ -34,6 +34,7 @@ import monitoreo_tiendas  # noqa: E402
 import ofertas_writer  # noqa: E402
 import run_lock  # noqa: E402
 import telegram_publisher  # noqa: E402
+from fuentes.bestmart.listado import obtener_ofertas_bestmart  # noqa: E402
 from fuentes.easy.listado import obtener_ofertas_easy  # noqa: E402
 from fuentes.falabella.listado import obtener_ofertas_listado  # noqa: E402
 from fuentes.falabella.producto import obtener_ofertas_productos_seguidos  # noqa: E402
@@ -42,6 +43,7 @@ from fuentes.luffytoys.listado import obtener_ofertas_luffytoys  # noqa: E402
 from fuentes.paris.listado import obtener_ofertas_paris  # noqa: E402
 from fuentes.ripley.listado import obtener_ofertas_ripley  # noqa: E402
 from fuentes.sodimac.listado import obtener_ofertas_sodimac  # noqa: E402
+from fuentes.spdigital.listado import obtener_ofertas_spdigital  # noqa: E402
 from fuentes.weplay.listado import obtener_ofertas_weplay  # noqa: E402
 from fuentes.xiaomi.listado import obtener_ofertas_xiaomi  # noqa: E402
 
@@ -273,6 +275,22 @@ async def _correr_sodimac(sesion: FetcherSession, repo_dir: Path) -> tuple[list[
     return detectados, True
 
 
+async def _correr_bestmart(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
+    detectados, paginas_ok = await obtener_ofertas_bestmart(sesion)
+    if paginas_ok == 0:
+        log.error("Bestmart: se descarta esta corrida sin tocar su estado, no se leyó ninguna página.")
+        return [], False
+    return detectados, True
+
+
+async def _correr_spdigital(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
+    detectados, categorias_ok = await obtener_ofertas_spdigital(sesion)
+    if categorias_ok == 0:
+        log.error("SPDigital: se descarta esta corrida sin tocar su estado, no se leyó ninguna categoría.")
+        return [], False
+    return detectados, True
+
+
 # id de config.Tienda -> función que corre esa tienda. Se resuelve acá (no en config.py) para
 # evitar un import circular: fuentes/* ya hace `import config`.
 _RUNNERS = {
@@ -285,6 +303,8 @@ _RUNNERS = {
     "weplay": _correr_weplay,
     "easy": _correr_easy,
     "sodimac": _correr_sodimac,
+    "bestmart": _correr_bestmart,
+    "spdigital": _correr_spdigital,
 }
 
 

@@ -82,6 +82,13 @@ UMBRAL_DESCUENTO_GEEK = 20  # mismo piso que DESCUENTO_MINIMO_WEB_PCT — decisi
 TIENDAS_DECO_HOGAR = {"easy", "sodimac"}
 UMBRAL_DESCUENTO_DECO_HOGAR = 20  # mismo piso que geek — decisión 2026-08-15
 
+# tiendas de la categoría "Tech" (tecnología/gaming, ver Tiendas/paginas.md) — mismo mecanismo
+# que TIENDAS_GEEK/TIENDAS_DECO_HOGAR: postean exclusivas a
+# CANAL_TELEGRAM_USERNAME["ofertas_tech"] si superan UMBRAL_DESCUENTO_TECH. PCFactory queda
+# afuera por ahora (plataforma sin endpoint de productos confirmado todavía).
+TIENDAS_TECH = {"bestmart", "spdigital"}
+UMBRAL_DESCUENTO_TECH = 20  # mismo piso que geek/deco hogar — decisión 2026-08-15
+
 # cada cuántas horas se le da otra chance a un producto que sigue siendo récord (precio mínimo o
 # mayor descuento) pero no cambió desde la última vez que se publicó — evita que ofertas buenas
 # queden "enterradas" para suscriptores nuevos. Sin tope de publicaciones por día: un producto
@@ -100,6 +107,7 @@ CANAL_TELEGRAM_USERNAME = {
     "ofertas_vip": "-1004438197572",
     "ofertas_geek": "-1003952570153",
     "ofertas_deco_hogar": "-1003961858440",
+    "ofertas_tech": "-1004332754687",
 }
 
 # tienda_id -> (canal, umbral) para las categorías especiales (geek, deco hogar, ...) — cada una
@@ -110,6 +118,7 @@ CANAL_TELEGRAM_USERNAME = {
 _CANAL_ESPECIAL_POR_TIENDA = {
     **{tid: ("ofertas_geek", UMBRAL_DESCUENTO_GEEK) for tid in TIENDAS_GEEK},
     **{tid: ("ofertas_deco_hogar", UMBRAL_DESCUENTO_DECO_HOGAR) for tid in TIENDAS_DECO_HOGAR},
+    **{tid: ("ofertas_tech", UMBRAL_DESCUENTO_TECH) for tid in TIENDAS_TECH},
 }
 
 
@@ -217,6 +226,8 @@ TIENDAS = [
     Tienda(id="weplay", nombre="WePlay"),
     Tienda(id="easy", nombre="Easy"),
     Tienda(id="sodimac", nombre="Sodimac"),
+    Tienda(id="bestmart", nombre="Bestmart"),
+    Tienda(id="spdigital", nombre="SPDigital"),
 ]
 
 
