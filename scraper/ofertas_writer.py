@@ -200,7 +200,7 @@ async def procesar(pool: asyncpg.Pool, items_detectados: list[dict], tienda: con
                 "precio_minimo_anterior": decision.precio_minimo_anterior,
                 "fecha_precio_minimo_anterior": decision.fecha_precio_minimo_anterior,
                 "historial": historial + [evento_nuevo],
-                "canal": config.canal_para_descuento(registro["descuento_pct"]),
+                "canal": config.canal_para_oferta(tienda.id, registro["descuento_pct"]),
                 "comercio": tienda.nombre,
             })
 
@@ -243,7 +243,7 @@ async def construir_feed_web(repo_dir: Path, pool: asyncpg.Pool) -> None:
             "url": afiliar_url(fila["url"], comercio),
             "imagen": fila["imagen"],
             "fecha": fila["primera_deteccion"].strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "canal": config.canal_para_descuento(fila["descuento_pct"]),
+            "canal": config.canal_para_oferta(fila["tienda_id"], fila["descuento_pct"]),
         })
 
     ruta_ofertas = repo_dir / config.RUTA_OFERTAS_JSON

@@ -36,6 +36,7 @@ import run_lock  # noqa: E402
 import telegram_publisher  # noqa: E402
 from fuentes.falabella.listado import obtener_ofertas_listado  # noqa: E402
 from fuentes.falabella.producto import obtener_ofertas_productos_seguidos  # noqa: E402
+from fuentes.luffytoys.listado import obtener_ofertas_luffytoys  # noqa: E402
 from fuentes.paris.listado import obtener_ofertas_paris  # noqa: E402
 from fuentes.ripley.listado import obtener_ofertas_ripley  # noqa: E402
 from fuentes.xiaomi.listado import obtener_ofertas_xiaomi  # noqa: E402
@@ -216,6 +217,14 @@ async def _correr_paris(sesion: FetcherSession, repo_dir: Path) -> tuple[list[di
     return detectados, True
 
 
+async def _correr_luffytoys(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
+    detectados, paginas_ok = await obtener_ofertas_luffytoys(sesion)
+    if paginas_ok == 0:
+        log.error("LuffyToys: se descarta esta corrida sin tocar su estado, no se leyó ninguna página.")
+        return [], False
+    return detectados, True
+
+
 # id de config.Tienda -> función que corre esa tienda. Se resuelve acá (no en config.py) para
 # evitar un import circular: fuentes/* ya hace `import config`.
 _RUNNERS = {
@@ -223,6 +232,7 @@ _RUNNERS = {
     "xiaomi": _correr_xiaomi,
     "ripley": _correr_ripley,
     "paris": _correr_paris,
+    "luffytoys": _correr_luffytoys,
 }
 
 

@@ -64,6 +64,13 @@ TIERS_DESCUENTO = [
     (25, "ofertas_40"),
 ]
 
+# tiendas de la categoría "Geek/Coleccionables/Gaming" (ver Tiendas/paginas.md) — postean a un
+# canal propio (CANAL_TELEGRAM_USERNAME["ofertas_geek"]) en vez de a ofertas_40/ofertas_vip,
+# siempre que superen UMBRAL_DESCUENTO_GEEK, sin importar su descuento_pct. Sumar la próxima
+# tienda geek (WePlay/Irion/Geekz) es agregar su Tienda.id acá, sin tocar el resto del código.
+TIENDAS_GEEK = {"luffytoys"}
+UMBRAL_DESCUENTO_GEEK = 20  # mismo piso que DESCUENTO_MINIMO_WEB_PCT — decisión 2026-08-15
+
 # cada cuántas horas se le da otra chance a un producto que sigue siendo récord (precio mínimo o
 # mayor descuento) pero no cambió desde la última vez que se publicó — evita que ofertas buenas
 # queden "enterradas" para suscriptores nuevos. Sin tope de publicaciones por día: un producto
@@ -80,6 +87,7 @@ HORAS_REPUBLICACION_REGLA3 = 6
 CANAL_TELEGRAM_USERNAME = {
     "ofertas_40": "descuentos_bigolito",
     "ofertas_vip": "-1004438197572",
+    "ofertas_geek": "-1003952570153",
 }
 
 
@@ -88,6 +96,15 @@ def canal_para_descuento(pct: int) -> str | None:
         if pct >= minimo:
             return canal
     return None
+
+
+def canal_para_oferta(tienda_id: str, pct: int) -> str | None:
+    """Como canal_para_descuento(), pero primero chequea si la tienda es geek (TIENDAS_GEEK) —
+    esas van exclusivas a "ofertas_geek" (no también a ofertas_40/ofertas_vip) si superan
+    UMBRAL_DESCUENTO_GEEK. El resto de las tiendas cae al criterio de siempre, sin cambios."""
+    if tienda_id in TIENDAS_GEEK:
+        return "ofertas_geek" if pct >= UMBRAL_DESCUENTO_GEEK else None
+    return canal_para_descuento(pct)
 
 
 # --- Descubrimiento de URLs (fallback cuando el listado conocido deja de funcionar) ---
@@ -162,6 +179,7 @@ TIENDAS = [
     Tienda(id="xiaomi", nombre="Xiaomi"),
     Tienda(id="ripley", nombre="Ripley"),
     Tienda(id="paris", nombre="Paris"),
+    Tienda(id="luffytoys", nombre="LuffyToys"),
 ]
 
 
