@@ -150,7 +150,7 @@ async def _crawl_categoria(sesion, semaforo: asyncio.Semaphore, categoria_id: st
         return items
 
 
-async def obtener_ofertas_weplay() -> tuple[list[dict], int]:
+async def obtener_ofertas_weplay(lock_headless: asyncio.Lock) -> tuple[list[dict], int]:
     """Devuelve (items crudos, categorías leídas sin error — 0 significa que no se pudo sacar
     nada de esta fuente). Mismo contrato que el resto de fuentes.<tienda>.listado.
 
@@ -158,11 +158,16 @@ async def obtener_ofertas_weplay() -> tuple[list[dict], int]:
     su propia sesión headless (AsyncStealthySession), la única capaz de pasar el challenge de
     Cloudflare de este sitio, y la reusa para las 9 categorías (mismo criterio que
     _diagnostico_headless en main.py: network_idle=False porque es un endpoint GraphQL, no
-    hace falta esperar a que cargue una página completa). max_pages=CONCURRENCIA_LISTADO para
-    que el pool de páginas del navegador soporte tantos fetches en simultáneo como el semáforo
-    permite — el default de la librería es 1, que serializaría todo."""
-    async with AsyncStealthySession(
-        headless=True, network_idle=False, timeout=30000, max_pages=config.CONCURRENCIA_LISTADO,
+    hace falta esperar a que cargue una página completa).
+
+    lock_headless (compartido con Ripley, ver main.py): evita que los dos navegadores headless
+    del proyecto corran a la vez — el contenedor de Railway (2 vCPU/1GB) se satura de memoria con
+    dos Chromium concurrentes (ver incidencia 2026-08-15: Page.goto nunca completaba, corrida
+    entera colgada). disable_resources=True (no cargar imágenes/CSS/fuentes) y max_pages=1 bajan
+    el consumo de memoria por su cuenta — ninguno de los dos afecta los datos: WePlay lee el JSON
+    de la respuesta GraphQL directo, no renderiza nada visual."""
+    async with lock_headless, AsyncStealthySession(
+        headless=True, network_idle=False, timeout=30000, max_pages=1, disable_resources=True,
     ) as sesion:
         semaforo = asyncio.Semaphore(config.CONCURRENCIA_LISTADO)
         resultados = await asyncio.gather(*(

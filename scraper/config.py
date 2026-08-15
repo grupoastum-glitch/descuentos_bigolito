@@ -47,6 +47,11 @@ DELAY_MAX_SEGUNDOS = 5.0
 REINTENTO_FETCH_INICIAL_SEGUNDOS = 5
 HTTP_TIMEOUT_SEGUNDOS = 30  # por request a Falabella — sin esto, un request colgado cuelga todo el job
 GIT_TIMEOUT_SEGUNDOS = 60  # por comando git (clone/push) — mismo motivo
+TIMEOUT_TIENDA_SEGUNDOS = 1200  # 20 min — techo por tienda en main.py::_procesar_tienda; ninguna
+# tienda individual debería tardar tanto en condiciones normales, pero un cuelgue real (ej.
+# Chromium sin completar una navegación en el contenedor, ver incidencia 2026-08-15) no debe
+# bloquear ni la publicación de las tiendas que sí terminaron ni el advisory lock de la próxima
+# corrida del cron.
 
 # --- Clasificación de ofertas ---
 DESCUENTO_MINIMO_WEB_PCT = 20  # piso para aparecer en el feed de la web

@@ -32,13 +32,24 @@ log = logging.getLogger("scraper.fuentes.listado")
 
 _HREF_RE = re.compile(r'href="([^"]+)"')
 _PARAM_DESCUENTO_FACET = "f.range.derived.variant.discount"
+_PATH_SIN_RESULTADOS = "/falabella-cl/noResult"
+
+
+class _PaginaSinResultados(Exception):
+    """La URL pedida redirigió a la página "sin resultados" de Falabella — no es un error real,
+    es el resultado esperado de pedir una página que no existe (ver _fetch_categoria_completa:
+    se pide un muestreo de páginas 2..MAX_PAGINAS_POR_CATEGORIA_DESCUENTOS a propósito, algunas
+    de las cuales van a estar más allá del fin real de la categoría)."""
 
 
 async def _fetch_pagina_html(sesion, url: str, path_esperado: str) -> str:
     respuesta = await sesion.get(url)
     if respuesta.status != 200:
         raise RuntimeError(f"HTTP {respuesta.status} en {url}")
-    if not urlparse(respuesta.url).path.startswith(path_esperado):
+    ruta_final = urlparse(respuesta.url).path
+    if ruta_final.startswith(_PATH_SIN_RESULTADOS):
+        raise _PaginaSinResultados(f"{url} no tiene resultados")
+    if not ruta_final.startswith(path_esperado):
         raise RuntimeError(f"{url} redirigió a {respuesta.url}, se omite")
     return respuesta.body.decode("utf-8", errors="replace")
 
@@ -80,6 +91,9 @@ async def _fetch_una_pagina_directo(sesion, semaforo, url_base: str, pagina: int
             datos = datos_pagina1 if pagina == 1 else await _obtener_pagina(sesion, url_base, pagina)
             productos = datos["props"]["pageProps"]["results"]
             resultado = _items_desde_productos(productos)
+        except _PaginaSinResultados:
+            log.debug("La página %s del listado de ofertas no tiene resultados, se omite", pagina)
+            return None
         except Exception:
             log.exception("Falló la página %s del listado de ofertas, se omite", pagina)
             return None
@@ -169,6 +183,9 @@ async def _fetch_una_categoria(sesion, semaforo, categoria_url: str, pagina: int
             datos = await _obtener_categoria_pagina(sesion, categoria_url, pagina)
             productos = datos["props"]["pageProps"]["results"]
             resultado = _items_desde_productos(productos)
+        except _PaginaSinResultados:
+            log.debug("%s (página %s) no tiene resultados, se omite", categoria_url, pagina)
+            return None
         except Exception:
             log.exception("Falló %s (página %s) del hub de descuentos, se omite", categoria_url, pagina)
             return None

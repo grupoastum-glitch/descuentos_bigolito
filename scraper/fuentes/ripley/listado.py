@@ -159,7 +159,7 @@ async def _fetch_con_reintento(sesion, url: str):
             await asyncio.sleep(config.REINTENTO_FETCH_INICIAL_SEGUNDOS)
 
 
-async def obtener_ofertas_ripley() -> tuple[list[dict], int]:
+async def obtener_ofertas_ripley(lock_headless: asyncio.Lock) -> tuple[list[dict], int]:
     """Devuelve (items crudos, categorías leídas sin error — 0 significa que no se pudo sacar
     nada de esta fuente). Mismo contrato que fuentes.falabella.listado.obtener_ofertas_listado
     y fuentes.xiaomi.listado.obtener_ofertas_xiaomi.
@@ -167,11 +167,20 @@ async def obtener_ofertas_ripley() -> tuple[list[dict], int]:
     A diferencia de las demás fuentes, no recibe la sesión compartida (FetcherSession) — arma
     su propia sesión headless (AsyncStealthySession), la única capaz de pasar el challenge
     persistente de Cloudflare de este sitio (ver docstring del módulo), y la reusa para el
-    warm-up, el árbol de categorías y todas las hojas. max_pages=CONCURRENCIA_LISTADO para que
-    el pool de páginas del navegador soporte tantos fetches en simultáneo como el semáforo
-    permite — el default de la librería es 1, que serializaría todo."""
-    async with AsyncStealthySession(
-        headless=True, network_idle=False, timeout=30000, max_pages=config.CONCURRENCIA_LISTADO,
+    warm-up, el árbol de categorías y todas las hojas.
+
+    lock_headless (compartido con WePlay, ver main.py): evita que los dos navegadores headless
+    del proyecto corran a la vez — el contenedor de Railway (2 vCPU/1GB) se satura de memoria con
+    dos Chromium concurrentes (ver incidencia 2026-08-15: Page.goto nunca completaba, corrida
+    entera colgada). max_pages=1 baja el consumo de memoria por su cuenta.
+
+    A diferencia de WePlay, acá NO se usa disable_resources=True — se probó y rompe la extracción
+    (findabilityProps.data queda None en la mayoría de las categorías, 0 ofertas): Ripley llena
+    ese campo con un fetch client-side de Next.js que aparentemente depende de alguno de los
+    recursos que ese modo bloquea (no se identificó cuál exactamente, no vale la pena diagnosticar
+    más para un ahorro de memoria que no es crítico acá — con max_pages=1 y el lock ya baja bastante)."""
+    async with lock_headless, AsyncStealthySession(
+        headless=True, network_idle=False, timeout=30000, max_pages=1,
     ) as sesion:
         try:
             await _calentar_sesion(sesion)

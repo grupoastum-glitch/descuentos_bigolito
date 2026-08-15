@@ -63,6 +63,12 @@ _DIAGNOSTICO_HEADLESS_URL = "https://www.mi.com/cl/product/xiaomi-su7-1-18-die-c
 _DIAGNOSTICO_HEADLESS_SELECTOR = ".information-section__product-price .mi-price strong"
 _DIAGNOSTICO_HEADLESS_PRECIO_ESPERADO = "69.990"
 
+# WePlay y Ripley (fuentes/weplay|ripley/listado.py) no corren su sesión headless
+# (AsyncStealthySession) al mismo tiempo — comparten este lock. El contenedor de Railway
+# (2 vCPU/1GB) se satura de memoria con dos Chromium concurrentes (incidencia 2026-08-15:
+# Page.goto nunca completaba una navegación, la corrida entera quedó colgada esperando).
+_LOCK_HEADLESS = asyncio.Lock()
+
 
 def _diagnostico_headless() -> None:
     """Chequeo de una sola vez: ¿corre Chromium headless en este contenedor? No participa de
@@ -207,7 +213,7 @@ async def _correr_ripley(sesion: FetcherSession, repo_dir: Path) -> tuple[list[d
     # sesion (FetcherSession compartida) no se usa acá: obtener_ofertas_ripley arma su propia
     # sesión headless internamente (ver fuentes/ripley/listado.py) — se mantiene en la firma
     # para no romper la llamada genérica runner(sesion, repo_dir) de _procesar_tienda.
-    detectados, categorias_ok = await obtener_ofertas_ripley()
+    detectados, categorias_ok = await obtener_ofertas_ripley(_LOCK_HEADLESS)
     if categorias_ok == 0:
         log.error("Ripley: se descarta esta corrida sin tocar su estado, no se leyó ninguna categoría.")
         return [], False
@@ -242,7 +248,7 @@ async def _correr_weplay(sesion: FetcherSession, repo_dir: Path) -> tuple[list[d
     # sesion (FetcherSession compartida) no se usa acá: obtener_ofertas_weplay arma su propia
     # sesión headless internamente (ver fuentes/weplay/listado.py) — se mantiene en la firma
     # para no romper la llamada genérica runner(sesion, repo_dir) de _procesar_tienda.
-    detectados, categorias_ok = await obtener_ofertas_weplay()
+    detectados, categorias_ok = await obtener_ofertas_weplay(_LOCK_HEADLESS)
     if categorias_ok == 0:
         log.error("WePlay: se descarta esta corrida sin tocar su estado, no se leyó ninguna categoría.")
         return [], False
@@ -291,7 +297,16 @@ async def _correr() -> None:
         # orden de scrapeo.
         async def _procesar_tienda(sesion, tienda) -> list[dict]:
             runner = _RUNNERS[tienda.id]
-            detectados, ok = await runner(sesion, repo_dir)
+            try:
+                detectados, ok = await asyncio.wait_for(
+                    runner(sesion, repo_dir), timeout=config.TIMEOUT_TIENDA_SEGUNDOS
+                )
+            except asyncio.TimeoutError:
+                log.error(
+                    "%s: no terminó en %ss, se descarta esta corrida (posible cuelgue)",
+                    tienda.nombre, config.TIMEOUT_TIENDA_SEGUNDOS,
+                )
+                detectados, ok = [], False
             candidatas: list[dict] = []
             if ok:
                 candidatas = await ofertas_writer.procesar(pool, detectados, tienda)
