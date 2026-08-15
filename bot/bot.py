@@ -31,13 +31,19 @@ import db
 
 RUTA_CONFIG = Path(__file__).resolve().parent.parent / "web" / "data" / "config.json"
 
-# chat_id numérico por canal pago — duplicado a propósito de pagos/config.py::CANAL_CHAT_ID:
+# chat_id(s) por canal pago — duplicado a propósito de pagos/config.py::CANAL_CHAT_ID:
 # bot/ y pagos/ son servicios independientes (containers separados, sin imports cruzados), mismo
-# criterio de "cada uno autocontenido" que ya usa el resto del proyecto. Sumar un canal pago nuevo
-# es agregar una línea acá Y en pagos/config.py.
+# criterio de "cada uno autocontenido" que ya usa el resto del proyecto. Cada canal_id mapea a una
+# LISTA de (chat_id, etiqueta) — una misma suscripción puede dar acceso a más de un chat (ej. "vip"
+# da acceso al VIP general y al Geek VIP, sin cobro aparte). Sumar un canal pago nuevo con su
+# propio precio es agregar una key acá Y en pagos/config.py (además de web/data/config.json
+# ::canales_pagos); sumar un chat más a un canal_id existente es agregar un elemento a su lista.
 CANAL_CHAT_ID = {
-    "vip": "-1004438197572",
-    "test2": "CAMBIAR_POR_CHAT_ID_REAL",  # canal de prueba, todavía no existe en Telegram
+    "vip": [
+        ("-1004438197572", "VIP"),
+        ("-1003952570153", "Geek VIP"),
+    ],
+    "test2": [("CAMBIAR_POR_CHAT_ID_REAL", "Canal Test 2")],  # canal de prueba, todavía no existe en Telegram
 }
 TZ_CHILE = ZoneInfo("America/Santiago")  # acceso_hasta se guarda en UTC — convertir antes de mostrar
 # mismo back_url usado al crear el Preapproval Plan (ver PLAN_canal_vip_mercadopago.md) — a dónde
@@ -421,7 +427,9 @@ async def cb_solicitud_union(update: Update, context: ContextTypes.DEFAULT_TYPE)
     primero hay que ubicar a qué canal_id corresponde el chat de la solicitud."""
     solicitud = update.chat_join_request
     chat_id = str(solicitud.chat.id)
-    canal_id = next((cid for cid, cid_chat in CANAL_CHAT_ID.items() if cid_chat == chat_id), None)
+    canal_id = next(
+        (cid for cid, chats in CANAL_CHAT_ID.items() if chat_id in {c for c, _ in chats}), None,
+    )
     if canal_id is None:
         log.warning("Solicitud de unión a un chat_id no configurado: %s", chat_id)
         await solicitud.decline()

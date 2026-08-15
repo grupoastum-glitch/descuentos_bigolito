@@ -18,10 +18,16 @@ MERCADOPAGO_ACCESS_TOKEN = os.environ.get("MERCADOPAGO_ACCESS_TOKEN", "")
 # webhook que llega de verdad viene de MercadoPago (ver pagos/webhook.py).
 MERCADOPAGO_WEBHOOK_SECRET = os.environ.get("MERCADOPAGO_WEBHOOK_SECRET", "")
 
-# chat_id numérico por canal pago (canal privado, ver scraper/config.py::CANAL_TELEGRAM_USERNAME
-# para el mecanismo equivalente del lado del scraper). Sumar un canal pago nuevo es agregar una
-# línea acá, sin tocar el resto del código — mismo criterio de extensibilidad.
+# chat_id(s) de Telegram por canal pago (canal privado, ver
+# scraper/config.py::CANAL_TELEGRAM_USERNAME para el mecanismo equivalente del lado del scraper).
+# Cada canal_id mapea a una LISTA de (chat_id, etiqueta) — una misma suscripción puede dar acceso
+# a más de un chat (ej. "vip" da acceso al VIP general y al Geek VIP, sin cobro aparte). Sumar un
+# canal pago nuevo con su propio precio es agregar una key acá (y en web/data/config.json
+# ::canales_pagos); sumar un chat más a un canal_id existente es agregar un elemento a su lista.
 CANAL_CHAT_ID = {
-    "vip": "-1004438197572",
-    "test2": "CAMBIAR_POR_CHAT_ID_REAL",  # canal de prueba, todavía no existe en Telegram
+    "vip": [
+        ("-1004438197572", "VIP"),
+        ("-1003952570153", "Geek VIP"),
+    ],
+    "test2": [("CAMBIAR_POR_CHAT_ID_REAL", "Canal Test 2")],  # canal de prueba, todavía no existe en Telegram
 }
