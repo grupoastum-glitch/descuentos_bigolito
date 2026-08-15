@@ -18,7 +18,7 @@
     "nombre": "Descuentos VIP",
     "url": "https://t.me/descuentos_bigolito_cl_bot",
     "icono": "crown",
-    "descripcion": "50% y más, por $3.000/mes.",
+    "descripcion": "Accede a varios canales VIP con descuentos del 50% y más, por $3.000/mes.",
     "nota": "Pago seguro con MercadoPago, cancelás cuando quieras."
   },
   "canales_pagos": [
@@ -26,7 +26,7 @@
       "canal_id": "vip",
       "nombre": "Descuentos VIP",
       "nombre_corto": "VIP",
-      "descripcion": "50% y más, por $3.000/mes.",
+      "descripcion": "Accede a varios canales VIP con descuentos del 50% y más, por $3.000/mes.",
       "nota": "Pago seguro con MercadoPago, cancelás cuando quieras.",
       "monto": 1000,
       "frecuencia": 1,
