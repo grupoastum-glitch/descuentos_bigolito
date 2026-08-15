@@ -31,6 +31,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 import asyncpg
 
@@ -39,6 +40,17 @@ import db
 from fuentes.falabella.parsing import calcular_descuento_pct  # noqa: F401 (reexportado para tests)
 
 log = logging.getLogger("scraper.ofertas_writer")
+
+
+def afiliar_url(url: str, comercio: str) -> str:
+    """Envuelve `url` con el deeplink de afiliado de Soicos configurado para `comercio` en
+    config.SOICOS_DEEPLINK_TEMPLATES. Sin plantilla para esa tienda, devuelve `url` sin cambios
+    (passthrough) — así una tienda sin programa aprobado en Soicos sigue publicando su URL
+    nativa sin que nadie tenga que tocar código."""
+    plantilla = config.SOICOS_DEEPLINK_TEMPLATES.get(comercio)
+    if not plantilla or not url:
+        return url
+    return plantilla.format(url=quote(url, safe=""))
 
 
 def _id_estable(tienda_id: str, producto_id: str) -> str:
@@ -178,7 +190,7 @@ async def procesar(pool: asyncpg.Pool, items_detectados: list[dict], tienda: con
             ofertas_para_publicar.append({
                 "id": clave,
                 "titulo": registro["titulo"],
-                "url": registro["url"],
+                "url": afiliar_url(registro["url"], tienda.nombre),
                 "imagen": registro["imagen"],
                 "precio_normal": registro["precio_normal"],
                 "precio_actual": registro["precio_actual"],
@@ -217,19 +229,22 @@ async def construir_feed_web(repo_dir: Path, pool: asyncpg.Pool) -> None:
         config.MAX_OFERTAS_WEB_TEASER - config.MAX_OFERTAS_VIP_WEB_TEASER,
         config.MAX_OFERTAS_VIP_WEB_TEASER,
     )
-    feed = [{
-        "id": fila["id"],
-        "titulo": fila["titulo"],
-        "descuento": f"{fila['descuento_pct']}%",
-        "comercio": nombre_por_tienda_id[fila["tienda_id"]],
-        "categoria": None,
-        "cupon": None,
-        "detalle": None,
-        "url": fila["url"],
-        "imagen": fila["imagen"],
-        "fecha": fila["primera_deteccion"].strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "canal": config.canal_para_descuento(fila["descuento_pct"]),
-    } for fila in filas]
+    feed = []
+    for fila in filas:
+        comercio = nombre_por_tienda_id[fila["tienda_id"]]
+        feed.append({
+            "id": fila["id"],
+            "titulo": fila["titulo"],
+            "descuento": f"{fila['descuento_pct']}%",
+            "comercio": comercio,
+            "categoria": None,
+            "cupon": None,
+            "detalle": None,
+            "url": afiliar_url(fila["url"], comercio),
+            "imagen": fila["imagen"],
+            "fecha": fila["primera_deteccion"].strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "canal": config.canal_para_descuento(fila["descuento_pct"]),
+        })
 
     ruta_ofertas = repo_dir / config.RUTA_OFERTAS_JSON
     ruta_ofertas.parent.mkdir(parents=True, exist_ok=True)
