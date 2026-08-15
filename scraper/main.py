@@ -40,6 +40,7 @@ from fuentes.geekz.listado import obtener_ofertas_geekz  # noqa: E402
 from fuentes.luffytoys.listado import obtener_ofertas_luffytoys  # noqa: E402
 from fuentes.paris.listado import obtener_ofertas_paris  # noqa: E402
 from fuentes.ripley.listado import obtener_ofertas_ripley  # noqa: E402
+from fuentes.weplay.listado import obtener_ofertas_weplay  # noqa: E402
 from fuentes.xiaomi.listado import obtener_ofertas_xiaomi  # noqa: E402
 
 CLAVE_DESCUBRIMIENTO_FALABELLA = "falabella_ofertas"
@@ -234,6 +235,14 @@ async def _correr_geekz(sesion: FetcherSession, repo_dir: Path) -> tuple[list[di
     return detectados, True
 
 
+async def _correr_weplay(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
+    detectados, categorias_ok = await obtener_ofertas_weplay(sesion)
+    if categorias_ok == 0:
+        log.error("WePlay: se descarta esta corrida sin tocar su estado, no se leyó ninguna categoría.")
+        return [], False
+    return detectados, True
+
+
 # id de config.Tienda -> función que corre esa tienda. Se resuelve acá (no en config.py) para
 # evitar un import circular: fuentes/* ya hace `import config`.
 _RUNNERS = {
@@ -243,6 +252,7 @@ _RUNNERS = {
     "paris": _correr_paris,
     "luffytoys": _correr_luffytoys,
     "geekz": _correr_geekz,
+    "weplay": _correr_weplay,
 }
 
 
