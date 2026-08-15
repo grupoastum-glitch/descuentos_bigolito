@@ -84,9 +84,8 @@ UMBRAL_DESCUENTO_DECO_HOGAR = 20  # mismo piso que geek — decisión 2026-08-15
 
 # tiendas de la categoría "Tech" (tecnología/gaming, ver Tiendas/paginas.md) — mismo mecanismo
 # que TIENDAS_GEEK/TIENDAS_DECO_HOGAR: postean exclusivas a
-# CANAL_TELEGRAM_USERNAME["ofertas_tech"] si superan UMBRAL_DESCUENTO_TECH. PCFactory queda
-# afuera por ahora (plataforma sin endpoint de productos confirmado todavía).
-TIENDAS_TECH = {"bestmart", "spdigital"}
+# CANAL_TELEGRAM_USERNAME["ofertas_tech"] si superan UMBRAL_DESCUENTO_TECH.
+TIENDAS_TECH = {"bestmart", "spdigital", "pcfactory"}
 UMBRAL_DESCUENTO_TECH = 20  # mismo piso que geek/deco hogar — decisión 2026-08-15
 
 # cada cuántas horas se le da otra chance a un producto que sigue siendo récord (precio mínimo o
@@ -228,6 +227,7 @@ TIENDAS = [
     Tienda(id="sodimac", nombre="Sodimac"),
     Tienda(id="bestmart", nombre="Bestmart"),
     Tienda(id="spdigital", nombre="SPDigital"),
+    Tienda(id="pcfactory", nombre="PCFactory"),
 ]
 
 
