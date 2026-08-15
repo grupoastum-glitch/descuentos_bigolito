@@ -23,7 +23,8 @@ import config
 
 log = logging.getLogger("scraper.telegram_publisher")
 
-MAX_EVENTOS_HISTORIAL_EN_CAPTION = 5  # Telegram limita el caption de una foto a 1024 caracteres
+MAX_EVENTOS_HISTORIAL_EN_CAPTION = 3  # techo de legibilidad — Telegram limita el caption de una
+# foto a 1024 caracteres, pero acá el límite real es no saturar el mensaje con eventos
 
 
 def _formatear_clp(monto: int) -> str:
