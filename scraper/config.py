@@ -68,7 +68,7 @@ TIERS_DESCUENTO = [
 # canal propio (CANAL_TELEGRAM_USERNAME["ofertas_geek"]) en vez de a ofertas_40/ofertas_vip,
 # siempre que superen UMBRAL_DESCUENTO_GEEK, sin importar su descuento_pct. Sumar la próxima
 # tienda geek (WePlay/Irion/Geekz) es agregar su Tienda.id acá, sin tocar el resto del código.
-TIENDAS_GEEK = {"luffytoys"}
+TIENDAS_GEEK = {"luffytoys", "geekz"}
 UMBRAL_DESCUENTO_GEEK = 20  # mismo piso que DESCUENTO_MINIMO_WEB_PCT — decisión 2026-08-15
 
 # cada cuántas horas se le da otra chance a un producto que sigue siendo récord (precio mínimo o
@@ -180,6 +180,7 @@ TIENDAS = [
     Tienda(id="ripley", nombre="Ripley"),
     Tienda(id="paris", nombre="Paris"),
     Tienda(id="luffytoys", nombre="LuffyToys"),
+    Tienda(id="geekz", nombre="Geekz"),
 ]
 
 
