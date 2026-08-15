@@ -140,6 +140,12 @@ GIT_CLONE_DIR = os.environ.get("SCRAPER_CLONE_DIR", "/tmp/ofertas-repo")
 # run_lock.json de antes, ambos vivían commiteados a git) ---
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
+# --- Identidad de esta instancia de scraper (namespacing del lock entre corridas concurrentes de
+# distintas instancias — ver run_lock.py). Vacío = instancia única de hoy, sin cambio de
+# comportamiento. Setear un nombre distinto por instancia recién hace falta el día que corra más
+# de un scraper en paralelo (ej. uno separado para tiendas geek).
+SCRAPER_NOMBRE = os.environ.get("SCRAPER_NOMBRE", "")
+
 # --- Telegram ---
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 # chat_id (privado o de un grupo/canal admin) donde avisar problemas operativos, ej. el

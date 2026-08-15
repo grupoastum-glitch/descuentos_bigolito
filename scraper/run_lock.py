@@ -6,16 +6,30 @@ pg_try_advisory_lock es no bloqueante (si ya hay lock, se aborta esta corrida, n
 por sesión: se libera solo en cuanto la conexión que lo sostiene se cierra, sin importar si fue un
 liberar_lock() prolijo o el contenedor muriendo de golpe — a diferencia del lock viejo (un archivo
 commiteado a git), no hace falta ningún timeout fijo para recuperarse de una corrida colgada.
+
+La clave está namespaced por config.SCRAPER_NOMBRE, no fija: dos instancias de scraper corriendo
+en paralelo (ej. una para tiendas normales, otra para geek) necesitan cada una su propio lock —
+si compartieran la misma clave, la segunda instancia se abortaría pensando que es una corrida
+duplicada de la primera, aunque sean dos scrapers legítimos distintos.
 """
 from __future__ import annotations
 
 import logging
+import zlib
 
 import asyncpg
 
+import config
+
 log = logging.getLogger("scraper.run_lock")
 
-_LOCK_KEY = 727271  # arbitrario, namespaced a esta app — un solo scraper, una sola clave
+# Sin SCRAPER_NOMBRE (instancia única de hoy): la clave arbitraria de siempre, sin cambio de
+# comportamiento. Con SCRAPER_NOMBRE seteado: hash estable del nombre, así cada instancia nueva
+# obtiene su propia clave con solo setear la env var, sin mantener un mapa a mano en el código.
+_LOCK_KEY = (
+    727271 if not config.SCRAPER_NOMBRE
+    else zlib.crc32(config.SCRAPER_NOMBRE.encode()) & 0x7FFFFFFF
+)
 
 
 async def adquirir_lock(pool: asyncpg.Pool) -> asyncpg.pool.PoolConnectionProxy | None:
