@@ -15,6 +15,7 @@ import time
 from datetime import datetime
 from typing import Awaitable, Callable
 
+import httpx
 from telegram import Bot
 from telegram.constants import ParseMode
 from telegram.error import RetryAfter, TelegramError, TimedOut
@@ -25,6 +26,41 @@ log = logging.getLogger("scraper.telegram_publisher")
 
 MAX_EVENTOS_HISTORIAL_EN_CAPTION = 3  # techo de legibilidad — Telegram limita el caption de una
 # foto a 1024 caracteres, pero acá el límite real es no saturar el mensaje con eventos
+
+_IMAGEN_TIMEOUT_SEGUNDOS = 10  # descarga chica (~30-60KB) desde el propio CDN de la tienda, no
+# debería tardar — un timeout corto evita que una imagen colgada demore la corrida entera
+_IMAGEN_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+
+# comercios cuyo CDN de imágenes bloquea al fetcher de Telegram (`send_photo(photo=<url>)` deja
+# que Telegram baje la imagen por su cuenta, y ahí falla) — para estos se descarga la imagen acá
+# mismo y se suben los bytes en vez de la URL (ver _descargar_imagen). Confirmado para Sodimac:
+# media.sodimac.cl responde con cookie __cf_bm (Cloudflare Bot Management), a diferencia de
+# media.falabella.com que no la tiene — un request normal (como el nuestro) pasa sin problema,
+# pero el fetcher de Telegram queda bloqueado. Si otra tienda presenta el mismo síntoma (se
+# publica sin foto pese a que `imagen` es una URL válida), sumarla acá.
+_COMERCIOS_CON_CDN_BLOQUEADO = {"Sodimac"}
+
+
+async def _descargar_imagen(url: str) -> bytes | None:
+    """Baja la imagen nosotros mismos en vez de dejar que Telegram la busque por su cuenta —
+    ver _COMERCIOS_CON_CDN_BLOQUEADO. Devuelve None ante cualquier problema (red, status,
+    contenido no imagen) para que el caller decida el fallback, igual que ante una URL rota."""
+    try:
+        async with httpx.AsyncClient(timeout=_IMAGEN_TIMEOUT_SEGUNDOS) as cliente:
+            respuesta = await cliente.get(url, headers={"User-Agent": _IMAGEN_USER_AGENT})
+        if respuesta.status_code != 200:
+            log.warning("Descarga de imagen falló (HTTP %s): %s", respuesta.status_code, url)
+            return None
+        if not respuesta.headers.get("content-type", "").startswith("image/"):
+            log.warning("Descarga de imagen no es una imagen (%s): %s", respuesta.headers.get("content-type"), url)
+            return None
+        return respuesta.content
+    except httpx.HTTPError:
+        log.warning("Excepción descargando imagen: %s", url, exc_info=True)
+        return None
 
 
 def _formatear_clp(monto: int) -> str:
@@ -115,14 +151,26 @@ async def _enviar_con_reintento(bot: Bot, chat_id: str, oferta: dict) -> bool:
     BadRequest), se cae a texto plano en el mismo intento en vez de perder la oferta; los
     errores transitorios de Telegram (RetryAfter/TimedOut) se dejan propagar para que el loop
     de abajo espere y reintente el envío completo. Devuelve True si se logró publicar (con o
-    sin foto), False si se agotaron los reintentos (pérdida definitiva)."""
+    sin foto), False si se agotaron los reintentos (pérdida definitiva).
+
+    Para los comercios de _COMERCIOS_CON_CDN_BLOQUEADO, la imagen se descarga acá mismo y se
+    sube como bytes en vez de pasarle la URL a Telegram (ver _descargar_imagen) — al resto de
+    las tiendas no se les toca el comportamiento, siguen mandando la URL directa como siempre."""
     texto = _formatear_caption(oferta)
     for intento in range(config.TELEGRAM_REINTENTOS_MAX + 1):
         try:
-            if oferta.get("imagen"):
+            imagen = oferta.get("imagen")
+            if imagen and oferta.get("comercio") in _COMERCIOS_CON_CDN_BLOQUEADO:
+                imagen = await _descargar_imagen(imagen)
+                if imagen is None:
+                    log.warning(
+                        "No se pudo descargar la imagen de %s para %s, fallback a texto: %s",
+                        oferta.get("comercio"), chat_id, oferta.get("imagen"),
+                    )
+            if imagen:
                 try:
                     await bot.send_photo(
-                        chat_id=chat_id, photo=oferta["imagen"], caption=texto, parse_mode=ParseMode.HTML,
+                        chat_id=chat_id, photo=imagen, caption=texto, parse_mode=ParseMode.HTML,
                     )
                 except (RetryAfter, TimedOut):
                     raise
