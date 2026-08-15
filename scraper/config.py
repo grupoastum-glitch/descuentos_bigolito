@@ -145,6 +145,8 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 # comportamiento. Setear un nombre distinto por instancia recién hace falta el día que corra más
 # de un scraper en paralelo (ej. uno separado para tiendas geek).
 SCRAPER_NOMBRE = os.environ.get("SCRAPER_NOMBRE", "")
+SCRAPER_TIENDAS = os.environ.get("SCRAPER_TIENDAS", "")  # ids separados por coma (ver TIENDAS
+# abajo), ej. "luffytoys,geekz,weplay". Vacío = todas (instancia única de hoy).
 
 # --- Telegram ---
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -194,6 +196,15 @@ TIENDAS = [
     Tienda(id="geekz", nombre="Geekz"),
     Tienda(id="weplay", nombre="WePlay"),
 ]
+
+
+def tiendas_activas() -> list[Tienda]:
+    """Subconjunto de TIENDAS que corre esta instancia — ver SCRAPER_TIENDAS. Vacío = todas
+    (comportamiento de instancia única)."""
+    if not SCRAPER_TIENDAS:
+        return TIENDAS
+    ids = {id_.strip() for id_ in SCRAPER_TIENDAS.split(",") if id_.strip()}
+    return [t for t in TIENDAS if t.id in ids]
 
 
 # A propósito bajo (no los 30 que web/js/data.js soportaría como máximo): la web es la

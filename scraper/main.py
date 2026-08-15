@@ -278,6 +278,14 @@ async def _correr() -> None:
 
     await asyncio.to_thread(_diagnostico_headless)
 
+    tiendas = config.tiendas_activas()
+    if not tiendas:
+        raise SystemExit("SCRAPER_TIENDAS no matchea ninguna tienda de config.TIENDAS — revisar el valor")
+    log.info(
+        "Tiendas activas en esta instancia (%s): %s",
+        config.SCRAPER_NOMBRE or "principal", ", ".join(t.nombre for t in tiendas),
+    )
+
     repo_dir = git_publish.clonar_repo()
     pool = await db.conectar()
 
@@ -322,7 +330,7 @@ async def _correr() -> None:
         todas_candidatas: list[dict] = []
         async with FetcherSession(impersonate=config.USER_AGENT_IMPERSONATE, timeout=config.HTTP_TIMEOUT_SEGUNDOS) as sesion:
             resultados = await asyncio.gather(*(
-                _procesar_tienda(sesion, tienda) for tienda in config.TIENDAS
+                _procesar_tienda(sesion, tienda) for tienda in tiendas
             ))
             for candidatas in resultados:
                 todas_candidatas.extend(candidatas)
