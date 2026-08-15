@@ -66,8 +66,6 @@ def _formatear_caption(oferta: dict) -> str:
     eventos = historial[-MAX_EVENTOS_HISTORIAL_EN_CAPTION:]
     lineas.append("")
     lineas.append("📊 Historial de precios oferta")
-    if len(eventos) < len(historial):
-        lineas.append(f"(+{len(historial) - len(eventos)} eventos anteriores)")
     for evento in eventos:
         lineas.append(
             f"{_formatear_clp(evento['precio'])} | {evento['descuento_pct']}% off | "
