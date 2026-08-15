@@ -1,7 +1,13 @@
 """Scrapea las ofertas de WePlay (weplay.cl).
 
 Es Magento 2 (tema Smartwave/weplay) detrás de Cloudflare — un curl plano recibe un challenge
-(403), pero FetcherSession(impersonate="chrome") pasa sin problema, igual que con Falabella.
+(403), y a diferencia de Falabella, FetcherSession(impersonate="chrome") tampoco lo pasa desde
+Railway (confirmado: 403 en las 9 categorías en cada corrida de producción, aunque local sí
+funcionaba). El nivel de protección de WePlay es más agresivo — necesita ejecutar JavaScript de
+verdad para resolver el challenge, por eso acá se usa AsyncStealthySession (navegador headless
+real) en vez de solo impersonar TLS/headers. El costo es básicamente un pago único por sesión
+(~1.5s resolviendo el challenge la primera vez); fetches siguientes a la misma sesión son
+tan rápidos como HTTP plano.
 
 A diferencia de LuffyToys/Geekz, WePlay no es una tienda 100% geek: vende videojuegos/consolas/
 Funko/coleccionables, pero también tecnología genérica, computación y ropa. Por eso acá no se
@@ -31,6 +37,8 @@ import json
 import logging
 import random
 import urllib.parse
+
+from scrapling.fetchers import AsyncStealthySession
 
 import config
 
@@ -104,7 +112,7 @@ def _items_desde_productos(productos: list[dict]) -> list[dict]:
 async def _fetch_pagina(sesion, categoria_id: str, pagina: int) -> dict:
     query = _QUERY_TEMPLATE % (categoria_id, _PAGE_SIZE, pagina)
     url = f"{_GRAPHQL_URL}?query={urllib.parse.quote(query)}"
-    respuesta = await sesion.get(url)
+    respuesta = await sesion.fetch(url)
     if respuesta.status != 200:
         raise RuntimeError(f"HTTP {respuesta.status} en categoría {categoria_id} página {pagina}")
     body = respuesta.body if isinstance(respuesta.body, str) else respuesta.body.decode("utf-8", errors="replace")
@@ -142,13 +150,24 @@ async def _crawl_categoria(sesion, semaforo: asyncio.Semaphore, categoria_id: st
         return items
 
 
-async def obtener_ofertas_weplay(sesion) -> tuple[list[dict], int]:
+async def obtener_ofertas_weplay() -> tuple[list[dict], int]:
     """Devuelve (items crudos, categorías leídas sin error — 0 significa que no se pudo sacar
-    nada de esta fuente). Mismo contrato que el resto de fuentes.<tienda>.listado."""
-    semaforo = asyncio.Semaphore(config.CONCURRENCIA_LISTADO)
-    resultados = await asyncio.gather(*(
-        _crawl_categoria(sesion, semaforo, cid) for cid in _CATEGORIAS_GEEK
-    ), return_exceptions=True)
+    nada de esta fuente). Mismo contrato que el resto de fuentes.<tienda>.listado.
+
+    A diferencia de las demás fuentes, no recibe la sesión compartida (FetcherSession) — arma
+    su propia sesión headless (AsyncStealthySession), la única capaz de pasar el challenge de
+    Cloudflare de este sitio, y la reusa para las 9 categorías (mismo criterio que
+    _diagnostico_headless en main.py: network_idle=False porque es un endpoint GraphQL, no
+    hace falta esperar a que cargue una página completa). max_pages=CONCURRENCIA_LISTADO para
+    que el pool de páginas del navegador soporte tantos fetches en simultáneo como el semáforo
+    permite — el default de la librería es 1, que serializaría todo."""
+    async with AsyncStealthySession(
+        headless=True, network_idle=False, timeout=30000, max_pages=config.CONCURRENCIA_LISTADO,
+    ) as sesion:
+        semaforo = asyncio.Semaphore(config.CONCURRENCIA_LISTADO)
+        resultados = await asyncio.gather(*(
+            _crawl_categoria(sesion, semaforo, cid) for cid in _CATEGORIAS_GEEK
+        ), return_exceptions=True)
 
     vistos: set[str] = set()
     items: list[dict] = []

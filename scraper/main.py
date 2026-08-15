@@ -204,7 +204,10 @@ async def _correr_xiaomi(sesion: FetcherSession, repo_dir: Path) -> tuple[list[d
 
 
 async def _correr_ripley(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
-    detectados, categorias_ok = await obtener_ofertas_ripley(sesion)
+    # sesion (FetcherSession compartida) no se usa acá: obtener_ofertas_ripley arma su propia
+    # sesión headless internamente (ver fuentes/ripley/listado.py) — se mantiene en la firma
+    # para no romper la llamada genérica runner(sesion, repo_dir) de _procesar_tienda.
+    detectados, categorias_ok = await obtener_ofertas_ripley()
     if categorias_ok == 0:
         log.error("Ripley: se descarta esta corrida sin tocar su estado, no se leyó ninguna categoría.")
         return [], False
@@ -236,7 +239,10 @@ async def _correr_geekz(sesion: FetcherSession, repo_dir: Path) -> tuple[list[di
 
 
 async def _correr_weplay(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
-    detectados, categorias_ok = await obtener_ofertas_weplay(sesion)
+    # sesion (FetcherSession compartida) no se usa acá: obtener_ofertas_weplay arma su propia
+    # sesión headless internamente (ver fuentes/weplay/listado.py) — se mantiene en la firma
+    # para no romper la llamada genérica runner(sesion, repo_dir) de _procesar_tienda.
+    detectados, categorias_ok = await obtener_ofertas_weplay()
     if categorias_ok == 0:
         log.error("WePlay: se descarta esta corrida sin tocar su estado, no se leyó ninguna categoría.")
         return [], False

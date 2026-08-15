@@ -30,6 +30,8 @@ import logging
 import random
 import re
 
+from scrapling.fetchers import AsyncStealthySession
+
 import config
 from fuentes.falabella.parsing import extraer_next_data
 
@@ -114,7 +116,7 @@ async def _fetch_categoria(sesion, semaforo: asyncio.Semaphore, ruta: str) -> li
     url = f"{_BASE_URL}/{ruta}"
     async with semaforo:
         try:
-            respuesta = await sesion.get(url)
+            respuesta = await sesion.fetch(url)
             if respuesta.status != 200:
                 raise RuntimeError(f"HTTP {respuesta.status} en {url}")
             html = respuesta.body.decode("utf-8", errors="replace")
@@ -133,7 +135,7 @@ async def _calentar_sesion(sesion) -> None:
     """GET a la home antes de pedir /outlet, para que cualquier cookie de tienda/región que
     Ripley setee ahí viaje también en la request al catálogo (mismo motivo que
     fuentes.falabella, ver main._calentar_sesion — acá no hace falta reusar el HTML)."""
-    respuesta = await sesion.get(_BASE_URL + "/")
+    respuesta = await sesion.fetch(_BASE_URL + "/")
     log.info("Warm-up: %s -> %s (status %s)", _BASE_URL + "/", respuesta.url, respuesta.status)
 
 
@@ -141,10 +143,12 @@ async def _fetch_con_reintento(sesion, url: str):
     """Un reintento (con una pausa corta) para el único fetch cuya falla aborta toda la
     tienda — un bloqueo/timeout transitorio no debería tirar la corrida completa (ver
     incidencia 2026-08-12: Ripley devolvió 403 en /outlet y se recuperó solo, minutos después,
-    sin ningún cambio de nuestro lado)."""
+    sin ningún cambio de nuestro lado). Ya no es la defensa principal contra el bloqueo de
+    Cloudflare — eso lo resuelve la sesión headless (ver obtener_ofertas_ripley) — pero se
+    mantiene como resguardo extra ante un timeout/bloqueo puntual del propio navegador."""
     for intento in range(2):
         try:
-            respuesta = await sesion.get(url)
+            respuesta = await sesion.fetch(url)
             if respuesta.status != 200:
                 raise RuntimeError(f"HTTP {respuesta.status} en {url}")
             return respuesta
@@ -155,32 +159,42 @@ async def _fetch_con_reintento(sesion, url: str):
             await asyncio.sleep(config.REINTENTO_FETCH_INICIAL_SEGUNDOS)
 
 
-async def obtener_ofertas_ripley(sesion) -> tuple[list[dict], int]:
+async def obtener_ofertas_ripley() -> tuple[list[dict], int]:
     """Devuelve (items crudos, categorías leídas sin error — 0 significa que no se pudo sacar
     nada de esta fuente). Mismo contrato que fuentes.falabella.listado.obtener_ofertas_listado
-    y fuentes.xiaomi.listado.obtener_ofertas_xiaomi."""
-    try:
-        await _calentar_sesion(sesion)
-        respuesta = await _fetch_con_reintento(sesion, _CATALOGO_URL)
-        html = respuesta.body.decode("utf-8", errors="replace")
-        next_data = extraer_next_data(html)
-        categorias = next_data["props"]["pageProps"]["catalog"]["categories"]
-        hojas = _categorias_hoja(categorias)
-    except Exception:
-        log.exception("Falló la carga del árbol de categorías de ofertas de Ripley (%s), se aborta", _CATALOGO_URL)
-        return [], 0
+    y fuentes.xiaomi.listado.obtener_ofertas_xiaomi.
 
-    log.info("Ripley: %s categorías hoja de ofertas encontradas", len(hojas))
-    if not hojas:
-        log.error("Ripley: el árbol de categorías de /outlet no tiene ninguna hoja utilizable")
-        return [], 0
+    A diferencia de las demás fuentes, no recibe la sesión compartida (FetcherSession) — arma
+    su propia sesión headless (AsyncStealthySession), la única capaz de pasar el challenge
+    persistente de Cloudflare de este sitio (ver docstring del módulo), y la reusa para el
+    warm-up, el árbol de categorías y todas las hojas. max_pages=CONCURRENCIA_LISTADO para que
+    el pool de páginas del navegador soporte tantos fetches en simultáneo como el semáforo
+    permite — el default de la librería es 1, que serializaría todo."""
+    async with AsyncStealthySession(
+        headless=True, network_idle=False, timeout=30000, max_pages=config.CONCURRENCIA_LISTADO,
+    ) as sesion:
+        try:
+            await _calentar_sesion(sesion)
+            respuesta = await _fetch_con_reintento(sesion, _CATALOGO_URL)
+            html = respuesta.body.decode("utf-8", errors="replace")
+            next_data = extraer_next_data(html)
+            categorias = next_data["props"]["pageProps"]["catalog"]["categories"]
+            hojas = _categorias_hoja(categorias)
+        except Exception:
+            log.exception("Falló la carga del árbol de categorías de ofertas de Ripley (%s), se aborta", _CATALOGO_URL)
+            return [], 0
 
-    semaforo = asyncio.Semaphore(config.CONCURRENCIA_LISTADO)
-    # return_exceptions=True: mismo motivo que en Falabella/Xiaomi — una excepción no anticipada
-    # en una sola categoría no debe tumbar la corrida completa (incidencia 2026-08-11).
-    resultados = await asyncio.gather(*(
-        _fetch_categoria(sesion, semaforo, ruta) for ruta in hojas
-    ), return_exceptions=True)
+        log.info("Ripley: %s categorías hoja de ofertas encontradas", len(hojas))
+        if not hojas:
+            log.error("Ripley: el árbol de categorías de /outlet no tiene ninguna hoja utilizable")
+            return [], 0
+
+        semaforo = asyncio.Semaphore(config.CONCURRENCIA_LISTADO)
+        # return_exceptions=True: mismo motivo que en Falabella/Xiaomi — una excepción no anticipada
+        # en una sola categoría no debe tumbar la corrida completa (incidencia 2026-08-11).
+        resultados = await asyncio.gather(*(
+            _fetch_categoria(sesion, semaforo, ruta) for ruta in hojas
+        ), return_exceptions=True)
 
     items: list[dict] = []
     categorias_ok = 0
