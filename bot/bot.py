@@ -295,8 +295,8 @@ async def _iniciar_suscripcion(
         context,
         f"{intro}El pago es 100% seguro con MercadoPago y podés cancelar cuando quieras.\n\n"
         "Para arrancar, decime tu email 👇\n\n"
-        "_Tip: si vas a pagar con tu saldo de MercadoPago (no tarjeta), tiene que ser el mismo "
-        "correo de esa cuenta, o el pago te lo va a rechazar._",
+        "_Tip: indicá el correo que usás en tu app de MercadoPago (si no, el pago va a ser "
+        "rechazado)._",
         teclado,
     )
 
@@ -465,10 +465,16 @@ async def cb_confirmar_email_vip(update: Update, context: ContextTypes.DEFAULT_T
         )
         return
 
-    teclado = InlineKeyboardMarkup([[InlineKeyboardButton("💳 Pagar suscripción", url=init_point)]])
+    teclado = InlineKeyboardMarkup([
+        [InlineKeyboardButton("💳 Pagar suscripción", url=init_point)],
+        [InlineKeyboardButton("✏️ Usar otro correo", callback_data="reescribir_email_vip")],
+        [InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")],
+    ])
     await _mostrar(
         update, context,
-        f"Listo 🙌 Tocá el botón para completar el pago y activar tu {canal_cfg['nombre']}:", teclado,
+        f"Listo 🙌 Tocá el botón para completar el pago y activar tu {canal_cfg['nombre']}:\n\n"
+        "(Si te equivocaste de correo y tu pago fue rechazado, tocá \"Usar otro correo\".)",
+        teclado,
     )
     context.user_data["pago_pendiente_msg_id"] = query.message.message_id
     context.user_data["pago_pendiente_chat_id"] = update.effective_chat.id
