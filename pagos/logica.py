@@ -39,15 +39,21 @@ def _periodo_de(auto_recurring: dict) -> timedelta:
     return timedelta(days=frecuencia)
 
 
-def _parse_external_reference(external_reference: str | None) -> tuple[int, str] | None:
-    """external_reference = "{telegram_user_id}:{canal_id}" (armado en bot/bot.py al crear la
-    preapproval). None si no tiene el formato esperado."""
+def _parse_external_reference(external_reference: str | None) -> tuple[int, str, str | None] | None:
+    """external_reference = "{telegram_user_id}:{canal_id}:{email}" (armado en
+    bot/bot.py::_crear_preapproval). El email viaja acá — no en el campo payer_email de la
+    preapproval, que la API real de MercadoPago nunca devuelve poblado (ver
+    aplicar_estado_preapproval) — porque es la única forma de que este proceso, separado del bot,
+    recupere el email que el usuario escribió en el chat. maxsplit=2 conserva cualquier ":" que el
+    email tuviera (raro, pero válido) en vez de cortarlo. None si no tiene el formato esperado, o
+    si es una preapproval vieja sin el tercer campo (external_reference solo tenía 2 partes)."""
     if not external_reference or ":" not in external_reference:
         return None
-    id_parte, canal_id = external_reference.split(":", 1)
-    if not id_parte.isdigit():
+    partes = external_reference.split(":", 2)
+    if len(partes) < 2 or not partes[0].isdigit():
         return None
-    return int(id_parte), canal_id
+    email = partes[2] if len(partes) == 3 else None
+    return int(partes[0]), partes[1], email
 
 
 async def aplicar_estado_preapproval(pool: asyncpg.Pool, preapproval: dict) -> None:
@@ -69,7 +75,7 @@ async def aplicar_estado_preapproval(pool: asyncpg.Pool, preapproval: dict) -> N
             preapproval.get("id"), preapproval.get("external_reference"),
         )
         return
-    telegram_user_id, canal_id = referencia
+    telegram_user_id, canal_id, email = referencia
 
     if canal_id not in config.CANAL_CHAT_ID:
         log.warning(
@@ -80,11 +86,12 @@ async def aplicar_estado_preapproval(pool: asyncpg.Pool, preapproval: dict) -> N
 
     # preapproval.get("payer_email"): confirmado contra la documentación oficial de MercadoPago
     # que esto siempre viene None — el recurso de preapproval solo trae "payer_id" (un ID interno
-    # numérico), nunca el email. El dato real de payer_email lo persiste bot/db.py::actualizar_email
-    # cuando el usuario lo escribe/confirma en el chat; acá se sigue pasando por si algún día la
+    # numérico), nunca el email. El email real viaja en el external_reference (ver
+    # _parse_external_reference); se sigue pasando payer_email como fallback por si algún día la
     # API empieza a devolverlo, protegido por el COALESCE de db.upsert_suscripcion.
     es_nueva_activacion = await db.upsert_suscripcion(
-        pool, telegram_user_id, canal_id, preapproval["id"], estado, preapproval.get("payer_email"),
+        pool, telegram_user_id, canal_id, preapproval["id"], estado,
+        email or preapproval.get("payer_email"),
     )
 
     if estado == "activa":

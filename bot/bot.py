@@ -321,7 +321,11 @@ async def _crear_preapproval(
         # confirmado contra la documentación oficial tras un 400 real (card_token_id is required).
         resultado = context.bot_data["mp_sdk"].preapproval().create({
             "reason": f"Suscripción {canal_cfg.get('nombre_corto', canal_cfg['nombre'])} — Descuentos Bigolito",
-            "external_reference": f"{telegram_user_id}:{canal_cfg['canal_id']}",
+            # el email va acá además de en payer_email porque preapproval.get("payer_email") nunca
+            # viene poblado en la respuesta real de la API de MercadoPago (ver
+            # pagos/logica.py::aplicar_estado_preapproval) — es la única forma de que el webhook,
+            # que corre en otro proceso/servicio, recupere el email que el usuario escribió acá.
+            "external_reference": f"{telegram_user_id}:{canal_cfg['canal_id']}:{email}",
             "payer_email": email,
             "auto_recurring": {
                 "frequency": canal_cfg["frecuencia"],
