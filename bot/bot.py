@@ -503,8 +503,8 @@ async def cb_confirmar_email_vip(update: Update, context: ContextTypes.DEFAULT_T
 
     link_tarjeta = _firmar_link_tarjeta(telegram_user_id, email, canal_cfg, context)
     teclado = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 Pagar suscripción", url=init_point)],
-        [InlineKeyboardButton("💳 Pagar con tarjeta (sin cuenta MercadoPago)", url=link_tarjeta)],
+        [InlineKeyboardButton("💳 MercadoPago", url=init_point)],
+        [InlineKeyboardButton("💳 Pagar con tarjeta", url=link_tarjeta)],
         [InlineKeyboardButton("✏️ Usar otro correo", callback_data="reescribir_email_vip")],
         [InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")],
     ])
