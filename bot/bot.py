@@ -9,6 +9,7 @@ la próxima interacción, sin reiniciar el proceso.
 import json
 import logging
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -103,6 +104,7 @@ def teclado_inicio(config: dict) -> InlineKeyboardMarkup | None:
         filas.append(
             [InlineKeyboardButton(f"{canal['nombre']} 👑", callback_data=f"suscribirme_{canal['canal_id']}")]
         )
+    filas.append([InlineKeyboardButton("📡 Ver mis canales", callback_data="ver_mis_canales")])
     if contacto and contacto.get("url"):
         filas.append([InlineKeyboardButton("Háblame 💬", url=contacto["url"])])
     return InlineKeyboardMarkup(filas) if filas else None
@@ -186,6 +188,46 @@ async def cb_volver_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     context.user_data.pop("canal_id_pendiente", None)
     config = cargar_config()
     await _mostrar(update, context, texto_bienvenida(config), teclado_inicio(config))
+
+
+async def cb_ver_mis_canales(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Muestra los canales a los que el usuario tiene acceso ahora mismo: el gratis siempre (es
+    público, todos tienen acceso) y, si tiene alguna suscripción paga activa, un botón por cada
+    chat privado que esa suscripción desbloquea (ver CANAL_CHAT_ID). El invite link de cada chat
+    privado se genera al vuelo en cada click en vez de guardarse — mismo mecanismo que
+    pagos/telegram_client.py::invitar() (duplicado a propósito, mismo criterio de servicios
+    autocontenidos que ya aplica CANAL_CHAT_ID), porque el chat exige creates_join_request y un
+    link viejo igual necesita que cb_solicitud_union apruebe contra la base de datos. Esto le
+    sirve al usuario para recuperar el acceso si perdió el link original, lo dejó expirar, o
+    salió del canal por error."""
+    query = update.callback_query
+    await query.answer()
+    config = cargar_config()
+    telegram_user_id = update.effective_user.id
+
+    ofertas = [c for c in config["canales"] if c.get("tipo", "oferta") == "oferta"]
+    filas = [[InlineKeyboardButton(c["nombre"], url=c["url"])] for c in ofertas if c.get("url")]
+
+    activos = await db.canales_activos(context.bot_data["db_pool"], telegram_user_id)
+    for canal_id in activos:
+        for chat_id, etiqueta in CANAL_CHAT_ID.get(canal_id, []):
+            try:
+                invite = await context.bot.create_chat_invite_link(
+                    chat_id=chat_id,
+                    creates_join_request=True,
+                    expire_date=datetime.now(timezone.utc) + timedelta(hours=24),
+                )
+            except TelegramError:
+                log.exception(
+                    "No se pudo generar invite link para %s (canal %s, chat %s)",
+                    telegram_user_id, canal_id, chat_id,
+                )
+                continue
+            filas.append([InlineKeyboardButton(f"🔓 {etiqueta}", url=invite.invite_link)])
+
+    filas.append([InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")])
+    texto = "📡 Estos son los canales a los que tenés acceso:"
+    await _mostrar(update, context, texto, InlineKeyboardMarkup(filas))
 
 
 async def _iniciar_suscripcion(
@@ -555,6 +597,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(cb_confirmar_email_vip, pattern="^confirmar_email_vip$"))
     app.add_handler(CallbackQueryHandler(cb_reescribir_email_vip, pattern="^reescribir_email_vip$"))
     app.add_handler(CallbackQueryHandler(cb_volver_menu, pattern="^volver_menu$"))
+    app.add_handler(CallbackQueryHandler(cb_ver_mis_canales, pattern="^ver_mis_canales$"))
     app.add_handler(ChatJoinRequestHandler(cb_solicitud_union))
     app.add_handler(MessageHandler(filters.COMMAND | filters.TEXT, mensaje_no_reconocido))
     app.add_error_handler(manejar_error)

@@ -46,6 +46,16 @@ async def obtener_acceso_hasta(pool: asyncpg.Pool, telegram_user_id: int, canal_
     return fila["acceso_hasta"] if fila else None
 
 
+async def canales_activos(pool: asyncpg.Pool, telegram_user_id: int) -> list[str]:
+    """canal_id de cada suscripción activa de este usuario, o [] si no tiene ninguna."""
+    async with pool.acquire() as con:
+        filas = await con.fetch(
+            "SELECT canal_id FROM suscripciones WHERE telegram_user_id = $1 AND estado = 'activa'",
+            telegram_user_id,
+        )
+    return [f["canal_id"] for f in filas]
+
+
 async def obtener_email(pool: asyncpg.Pool, telegram_user_id: int, canal_id: str) -> str | None:
     """Último email de MercadoPago que funcionó para esta persona en este canal, o None si nunca
     se suscribió antes — evita volver a pedirlo en una renovación."""
