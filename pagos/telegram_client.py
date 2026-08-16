@@ -57,6 +57,12 @@ async def invitar(telegram_user_id: int, canal_id: str) -> None:
             )
             return
 
+        # callback_data="volver_menu": lo captura bot/bot.py::cb_volver_menu sin importar que
+        # este mensaje lo haya mandado el servicio de pagos (mismo criterio que el botón de
+        # renovar en expulsar(), más abajo) — los clics le llegan a quien esté haciendo
+        # run_polling() (el servicio bot).
+        botones.append([InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")])
+
         try:
             await bot.send_message(
                 chat_id=telegram_user_id,
