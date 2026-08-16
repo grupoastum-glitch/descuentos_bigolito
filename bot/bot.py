@@ -284,7 +284,7 @@ async def _iniciar_suscripcion(
             [InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")],
         ])
         await _mostrar(
-            update, context, f"{intro}¿Seguís usando este correo: *{email_seguro}*?", teclado
+            update, context, f"{intro}¿Seguís usando este correo: {email_seguro}?", teclado
         )
         return
 
@@ -417,7 +417,7 @@ async def _procesar_email_vip(update: Update, context: ContextTypes.DEFAULT_TYPE
     # rompería el parseo de Markdown si se interpola sin escapar.
     email_seguro = escape_markdown(email, version=1)
     await _mostrar(
-        update, context, f"¿Este es tu correo: *{email_seguro}*?", teclado
+        update, context, f"¿Este es tu correo: {email_seguro}?", teclado
     )
 
 
