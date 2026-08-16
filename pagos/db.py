@@ -155,15 +155,28 @@ async def extender_acceso(
         )
 
 
+# margen de gracia entre que acceso_hasta pasa y se lo considera "vencido" de verdad — el cobro
+# (primero o recurrente) se confirma de forma asíncrona del lado de MercadoPago, documentado en
+# ~1h; sin este margen, una suscripción recién activada (acceso_hasta arranca en "ahora" hasta
+# que aplicar_pago_recurrente confirma el cobro real, ver pagos/logica.py) ya cuenta como vencida
+# desde el instante en que se invita. No confundir con el período de gracia de cancelación
+# (COMPLETADO_periodo_gracia_cancelacion.md) — ese deja al usuario con acceso hasta que vence lo
+# ya pagado; este es un margen nuevo sobre cuándo se considera vencido ese vencimiento.
+_MARGEN_GRACIA_VENCIMIENTO = timedelta(hours=6)
+
+
 async def listar_vencidas(pool: asyncpg.Pool) -> list[dict]:
-    """Usado por pagos/reconciliacion.py: suscripciones cuyo período pagado ya venció y todavía no
-    fueron expulsadas. Incluye 'activa' a propósito: una fila activa con acceso_hasta pasado
-    significa que un cobro recurrente falló en silencio (MercadoPago sigue reintentando sin haber
-    cambiado el status de la preapproval todavía) — no solo cancelaciones/pausas explícitas. Se
-    incluye `estado` para que el caller distinga ambos casos al marcar el resultado."""
+    """Usado por pagos/reconciliacion.py: suscripciones cuyo período pagado ya venció (con el
+    margen de _MARGEN_GRACIA_VENCIMIENTO ya descontado) y todavía no fueron expulsadas. Incluye
+    'activa' a propósito: una fila activa con acceso_hasta pasado (más el margen) significa que un
+    cobro recurrente falló en silencio (MercadoPago sigue reintentando sin haber cambiado el
+    status de la preapproval todavía) — no solo cancelaciones/pausas explícitas. Se incluye
+    `estado` para que el caller distinga ambos casos al marcar el resultado."""
     async with pool.acquire() as con:
         filas = await con.fetch(
             """SELECT telegram_user_id, canal_id, estado FROM suscripciones
-               WHERE estado IN ('activa', 'cancelada', 'pausada') AND acceso_hasta <= now()""",
+               WHERE estado IN ('activa', 'cancelada', 'pausada')
+                 AND acceso_hasta <= now() - $1::interval""",
+            _MARGEN_GRACIA_VENCIMIENTO,
         )
     return [dict(f) for f in filas]
