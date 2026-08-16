@@ -41,10 +41,10 @@ RUTA_CONFIG = Path(__file__).resolve().parent.parent / "web" / "data" / "config.
 # ::canales_pagos); sumar un chat más a un canal_id existente es agregar un elemento a su lista.
 CANAL_CHAT_ID = {
     "vip": [
-        ("-1004438197572", "VIP"),
-        ("-1003952570153", "Geek VIP"),
-        ("-1003961858440", "Deco Hogar VIP"),
-        ("-1004332754687", "Tech VIP"),
+        ("-1004438197572", "+50% OFF RETAIL VIP 💎"),
+        ("-1003952570153", "+20% OFF GEEK VIP 🕹️"),
+        ("-1003961858440", "+20% OFF DECO/HOGAR VIP 🏠"),
+        ("-1004332754687", "+20% OFF TECH VIP 🖥"),
     ],
     "test2": [("CAMBIAR_POR_CHAT_ID_REAL", "Canal Test 2")],  # canal de prueba, todavía no existe en Telegram
 }
@@ -223,7 +223,7 @@ async def cb_ver_mis_canales(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     telegram_user_id, canal_id, chat_id,
                 )
                 continue
-            filas.append([InlineKeyboardButton(f"🔓 {etiqueta}", url=invite.invite_link)])
+            filas.append([InlineKeyboardButton(etiqueta, url=invite.invite_link)])
 
     filas.append([InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")])
     texto = "📡 Estos son los canales a los que tenés acceso:"

@@ -48,7 +48,7 @@ async def invitar(telegram_user_id: int, canal_id: str) -> None:
                     telegram_user_id, canal_id, chat_id,
                 )
                 continue
-            botones.append([InlineKeyboardButton(f"🔓 Entrar al canal {etiqueta}", url=invite.invite_link)])
+            botones.append([InlineKeyboardButton(etiqueta, url=invite.invite_link)])
 
         if not botones:
             log.error(

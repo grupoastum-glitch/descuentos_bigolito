@@ -26,10 +26,10 @@ MERCADOPAGO_WEBHOOK_SECRET = os.environ.get("MERCADOPAGO_WEBHOOK_SECRET", "")
 # ::canales_pagos); sumar un chat más a un canal_id existente es agregar un elemento a su lista.
 CANAL_CHAT_ID = {
     "vip": [
-        ("-1004438197572", "VIP"),
-        ("-1003952570153", "Geek VIP"),
-        ("-1003961858440", "Deco Hogar VIP"),
-        ("-1004332754687", "Tech VIP"),
+        ("-1004438197572", "+50% OFF RETAIL VIP 💎"),
+        ("-1003952570153", "+20% OFF GEEK VIP 🕹️"),
+        ("-1003961858440", "+20% OFF DECO/HOGAR VIP 🏠"),
+        ("-1004332754687", "+20% OFF TECH VIP 🖥"),
     ],
     "test2": [("CAMBIAR_POR_CHAT_ID_REAL", "Canal Test 2")],  # canal de prueba, todavía no existe en Telegram
 }
