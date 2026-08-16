@@ -19,6 +19,12 @@ log = logging.getLogger("pagos.mercadopago_client")
 
 _sdk = mercadopago.SDK(config.MERCADOPAGO_ACCESS_TOKEN)
 
+# duplicado a propósito de bot/bot.py::BACK_URL_MERCADOPAGO (mismo criterio que CANAL_CHAT_ID en
+# config.py — servicios independientes, sin imports cruzados). MercadoPago exige este campo en
+# /preapproval incluso con card_token_id+status:authorized, aunque acá nunca se use para
+# redirigir (confirmado en vivo: sin él, la API rechaza con 400 "back_url is required").
+BACK_URL_MERCADOPAGO = "https://t.me/descuentos_bigolito_cl_bot"
+
 
 def verificar_firma(x_signature: str | None, x_request_id: str | None, data_id: str | None) -> bool:
     """True si la notificación viene de verdad de MercadoPago. Nunca lanza — cualquier fallo de
@@ -60,8 +66,10 @@ def crear_preapproval_con_tarjeta(
     """POST /preapproval con pago autorizado inmediato vía tarjeta tokenizada (MercadoPago
     Bricks) — alternativa a bot/bot.py::_crear_preapproval para pagadores sin cuenta de
     MercadoPago, llamada desde pagos/pagos_tarjeta.py. Mismo external_reference/auto_recurring/
-    payer_email/reason que el flujo redirigido (para que pagos/logica.py::_parse_external_reference
-    lo entienda sin cambios), cambiando back_url+status:pending por card_token_id+status:authorized.
+    payer_email/reason/back_url que el flujo redirigido (para que pagos/logica.py::
+    _parse_external_reference lo entienda sin cambios), sumando card_token_id y cambiando
+    status:pending por status:authorized. back_url sigue siendo obligatorio para la API aunque acá
+    nunca se use para redirigir (confirmado en vivo: 400 "back_url is required" sin él).
 
     Confirmado contra la documentación oficial y contra soporte de MercadoPago (ver el plan de
     Bricks): no hace falta payment_method_id, y el payer_email solo necesita coincidir con el que
@@ -84,6 +92,7 @@ def crear_preapproval_con_tarjeta(
         },
         "card_token_id": card_token_id,
         "status": "authorized",
+        "back_url": BACK_URL_MERCADOPAGO,
     })
     resultado.raise_for_status()
     return resultado["response"]
