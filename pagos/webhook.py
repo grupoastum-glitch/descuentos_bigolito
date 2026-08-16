@@ -11,6 +11,7 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from mercadopago.errors.exceptions import MPNotFoundError
 
@@ -20,6 +21,7 @@ import config  # noqa: E402 (después de load_dotenv a propósito, config lee os
 import db  # noqa: E402
 import logica  # noqa: E402
 import mercadopago_client  # noqa: E402
+import pagos_tarjeta  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("pagos.webhook")
@@ -42,6 +44,17 @@ async def _lifespan(_app: FastAPI):
 
 
 app = FastAPI(lifespan=_lifespan)
+
+# Solo para pagos_tarjeta.router (POST /pagos/tarjeta) — la primera ruta de este servicio llamada
+# directo desde un navegador en vez de server-to-server, así que es la primera vez que hace falta
+# CORS acá. Acotado al dominio propio, nunca "*": este servicio mueve plata real.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://www.descuentosbigolito.cl"],
+    allow_methods=["POST"],
+    allow_headers=["content-type"],
+)
+app.include_router(pagos_tarjeta.router)
 
 
 @app.post("/webhook/mercadopago")

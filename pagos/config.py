@@ -18,6 +18,12 @@ MERCADOPAGO_ACCESS_TOKEN = os.environ.get("MERCADOPAGO_ACCESS_TOKEN", "")
 # webhook que llega de verdad viene de MercadoPago (ver pagos/webhook.py).
 MERCADOPAGO_WEBHOOK_SECRET = os.environ.get("MERCADOPAGO_WEBHOOK_SECRET", "")
 
+# secreto compartido con bot/ (mismo valor en los dos .env) para firmar el link de pago con
+# tarjeta que el bot genera — sin esto, cualquiera podría cambiar telegram_user_id/canal_id/email
+# en la URL y generar un cobro/acceso a nombre de otro usuario, ya que ese endpoint lo llama el
+# navegador directo, sin sesión autenticada de Telegram (ver pagos/pagos_tarjeta.py).
+LINK_PAGO_SECRET = os.environ.get("LINK_PAGO_SECRET", "")
+
 # chat_id(s) de Telegram por canal pago (canal privado, ver
 # scraper/config.py::CANAL_TELEGRAM_USERNAME para el mecanismo equivalente del lado del scraper).
 # Cada canal_id mapea a una LISTA de (chat_id, etiqueta) — una misma suscripción puede dar acceso

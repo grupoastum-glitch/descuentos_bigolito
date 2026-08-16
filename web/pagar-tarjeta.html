@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+  <title>Pagar con tarjeta | Descuentos Bigolito</title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#0B0B0E">
+
+  <link rel="icon" type="image/png" href="./images/icono-192.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            marca:      { DEFAULT: '#5B4BE8', oscuro: '#4A3BD1', claro: '#A99BFF' },
+            superficie: { DEFAULT: '#1C1C21', alta:   '#25252B' },
+            fondo: '#0B0B0E'
+          },
+          fontFamily: { sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'] }
+        }
+      }
+    };
+  </script>
+
+  <script src="https://sdk.mercadopago.com/js/v2"></script>
+</head>
+
+<body class="bg-gray-100 dark:bg-black text-gray-900 dark:text-white font-sans">
+
+  <div class="relative mx-auto flex min-h-[100dvh] w-full max-w-md flex-col bg-gray-50 dark:bg-fondo px-6 py-8">
+
+    <header class="mb-6 flex items-center gap-3">
+      <img src="./images/logo-bigolito.jpg" alt="Descuentos Bigolito"
+           class="h-10 w-10 shrink-0 rounded-full object-cover" />
+      <p class="text-lg font-bold leading-tight">Pagar con tarjeta</p>
+    </header>
+
+    <!-- Estado: cargando -->
+    <div id="estado-cargando" class="flex flex-1 flex-col items-center justify-center gap-3 text-center text-sm text-gray-500 dark:text-neutral-400">
+      <div class="h-8 w-8 animate-spin rounded-full border-4 border-marca/30 border-t-marca"></div>
+      <p>Cargando formulario de pago…</p>
+    </div>
+
+    <!-- Estado: link inválido/vencido (no llegó a mostrar el Brick) -->
+    <div id="estado-link-invalido" class="hidden flex-1 flex-col items-center justify-center gap-4 text-center">
+      <p class="text-4xl">⏱️</p>
+      <p class="text-base font-semibold">Este link ya no es válido</p>
+      <p class="text-sm text-gray-500 dark:text-neutral-400">
+        Volvé al bot de Telegram y tocá de nuevo el botón "Pagar con tarjeta" para generar uno nuevo.
+      </p>
+      <a href="https://t.me/descuentos_bigolito_cl_bot"
+         class="mt-2 rounded-full bg-marca px-6 py-3 text-sm font-semibold text-white active:scale-95">
+        Volver a Telegram
+      </a>
+    </div>
+
+    <!-- Estado: formulario de pago (Card Payment Brick de MercadoPago) -->
+    <div id="estado-formulario" class="hidden flex-1 flex-col">
+      <p class="mb-1 text-sm text-gray-500 dark:text-neutral-400">Suscripción</p>
+      <p id="nombre-canal" class="mb-4 text-xl font-bold"></p>
+      <div id="cardPaymentBrick_container"></div>
+      <p id="mensaje-rechazo" class="hidden mt-3 rounded-xl bg-red-500/10 px-4 py-3 text-sm text-red-500"></p>
+    </div>
+
+    <!-- Estado: pago aprobado -->
+    <div id="estado-exito" class="hidden flex-1 flex-col items-center justify-center gap-4 text-center">
+      <p class="text-4xl">✅</p>
+      <p class="text-base font-semibold">¡Listo! Tu pago fue aprobado</p>
+      <p class="text-sm text-gray-500 dark:text-neutral-400">
+        Volvé a Telegram — en unos segundos te va a llegar la invitación a tus canales VIP.
+      </p>
+      <a href="https://t.me/descuentos_bigolito_cl_bot"
+         class="mt-2 rounded-full bg-marca px-6 py-3 text-sm font-semibold text-white active:scale-95">
+        Volver a Telegram
+      </a>
+    </div>
+
+    <!-- Estado: error genérico (no relacionado a la tarjeta) -->
+    <div id="estado-error" class="hidden flex-1 flex-col items-center justify-center gap-4 text-center">
+      <p class="text-4xl">⚠️</p>
+      <p class="text-base font-semibold">No pudimos procesar el pago</p>
+      <p id="mensaje-error" class="text-sm text-gray-500 dark:text-neutral-400">
+        Intentá de nuevo en unos minutos. Si el problema sigue, avisanos desde el bot de Telegram.
+      </p>
+      <a href="https://t.me/descuentos_bigolito_cl_bot"
+         class="mt-2 rounded-full bg-marca px-6 py-3 text-sm font-semibold text-white active:scale-95">
+        Volver a Telegram
+      </a>
+    </div>
+
+  </div>
+
+  <script>
+    // ---------------------------------------------------------------
+    // Config a completar antes de desplegar (ver plan de MercadoPago Bricks):
+    // - PUBLIC_KEY: Public Key de MercadoPago (dato público, seguro acá). Sandbox y producción
+    //   son pares de credenciales distintos — no mezclar con el Access Token del otro modo.
+    // - URL_ENDPOINT_PAGOS: URL pública del servicio "pagos" (webhook) de Railway, no documentada
+    //   en el repo porque se configura fuera de él (dashboard de Railway).
+    // ---------------------------------------------------------------
+    const PUBLIC_KEY = 'TEST-acce5aef-fe06-4467-8758-c4fe35e3dc30';
+    const URL_ENDPOINT_PAGOS = 'https://descuentosbigolito-production.up.railway.app/pagos/tarjeta';
+
+    const params = new URLSearchParams(window.location.search);
+    const telegram_user_id = params.get('telegram_user_id');
+    const canal_id = params.get('canal_id');
+    const email = params.get('email');
+    const exp = params.get('exp');
+    const sig = params.get('sig');
+    // monto/nombre_canal viajan sin firmar — son solo para mostrar en pantalla, el servidor
+    // siempre resuelve el monto real desde config.json al crear la suscripción (ver
+    // pagos/pagos_tarjeta.py), nunca confía en lo que mande el navegador.
+    const monto = Number(params.get('monto'));
+    const nombreCanal = params.get('nombre_canal') || 'Suscripción VIP';
+
+    function mostrarEstado(id) {
+      for (const el of document.querySelectorAll('[id^="estado-"]')) {
+        el.classList.toggle('hidden', el.id !== id);
+        el.classList.toggle('flex', el.id === id);
+      }
+    }
+
+    if (!telegram_user_id || !canal_id || !email || !exp || !sig || !monto) {
+      mostrarEstado('estado-link-invalido');
+    } else {
+      document.getElementById('nombre-canal').textContent = nombreCanal;
+      iniciarBrick();
+    }
+
+    async function enviarPago(cardTokenId) {
+      const respuesta = await fetch(URL_ENDPOINT_PAGOS, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          telegram_user_id, canal_id, email, exp, sig, card_token_id: cardTokenId,
+        }),
+      });
+
+      if (respuesta.status === 401) {
+        mostrarEstado('estado-link-invalido');
+        throw new Error('link_invalido');
+      }
+
+      const datos = await respuesta.json().catch(() => ({}));
+
+      if (respuesta.ok && datos.status === 'ok') {
+        mostrarEstado('estado-exito');
+        return;
+      }
+
+      if (datos.error === 'pago_rechazado') {
+        const mensajeRechazo = document.getElementById('mensaje-rechazo');
+        mensajeRechazo.textContent = datos.detalle
+          ? `Tu tarjeta fue rechazada (${datos.detalle}). Probá con otra tarjeta.`
+          : 'Tu tarjeta fue rechazada. Probá con otra tarjeta.';
+        mensajeRechazo.classList.remove('hidden');
+        // se relanza para que el Brick vuelva a habilitar el formulario y tokenice de nuevo en
+        // el próximo intento — el token ya usado no sirve para un segundo intento.
+        throw new Error('pago_rechazado');
+      }
+
+      document.getElementById('mensaje-error').textContent =
+        'Intentá de nuevo en unos minutos. Si el problema sigue, avisanos desde el bot de Telegram.';
+      mostrarEstado('estado-error');
+      throw new Error(datos.error || 'error_desconocido');
+    }
+
+    async function iniciarBrick() {
+      mostrarEstado('estado-cargando');
+      const mp = new MercadoPago(PUBLIC_KEY, { locale: 'es-CL' });
+      const bricksBuilder = mp.bricks();
+
+      try {
+        await bricksBuilder.create('cardPayment', 'cardPaymentBrick_container', {
+          initialization: { amount: monto, payer: { email } },
+          customization: { paymentMethods: { maxInstallments: 1 } },
+          callbacks: {
+            onReady: () => mostrarEstado('estado-formulario'),
+            onSubmit: (cardFormData) => enviarPago(cardFormData.token),
+            onError: (error) => {
+              console.error('Card Payment Brick error:', error);
+              document.getElementById('mensaje-error').textContent =
+                'No pudimos cargar el formulario de pago. Recargá la página e intentá de nuevo.';
+              mostrarEstado('estado-error');
+            },
+          },
+        });
+      } catch (error) {
+        console.error(error);
+        document.getElementById('mensaje-error').textContent =
+          'No pudimos cargar el formulario de pago. Recargá la página e intentá de nuevo.';
+        mostrarEstado('estado-error');
+      }
+    }
+  </script>
+</body>
+</html>

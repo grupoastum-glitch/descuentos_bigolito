@@ -6,12 +6,15 @@ la misma fuente que usa la web. Editar ese archivo actualiza el bot en
 la próxima interacción, sin reiniciar el proceso.
 """
 
+import hashlib
+import hmac
 import json
 import logging
 import os
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 import mercadopago
@@ -57,6 +60,14 @@ VENTANA_DEBOUNCE_APROBACION_SEGUNDOS = 10
 # mismo back_url usado al crear el Preapproval Plan (ver PLAN_canal_vip_mercadopago.md) — a dónde
 # vuelve el usuario después de autorizar el pago en MercadoPago.
 BACK_URL_MERCADOPAGO = "https://t.me/descuentos_bigolito_cl_bot"
+
+# página propia (Cloudflare Pages, mismo sitio que web/index.html) con el Card Payment Brick de
+# MercadoPago — alternativa de pago con tarjeta para quien no tiene cuenta de MercadoPago, ver
+# _firmar_link_tarjeta y pagos/pagos_tarjeta.py (el endpoint que la procesa del otro lado).
+URL_PAGO_TARJETA = "https://www.descuentosbigolito.cl/pagar-tarjeta.html"
+# ventana de validez del link firmado — corta a propósito, se genera y se usa al toque en la
+# misma conversación con el bot.
+_VENTANA_LINK_TARJETA_SEGUNDOS = 15 * 60
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -345,6 +356,31 @@ async def _crear_preapproval(
     return resultado["response"]["init_point"]
 
 
+def _firmar_link_tarjeta(
+    telegram_user_id: int, email: str, canal_cfg: dict, context: ContextTypes.DEFAULT_TYPE,
+) -> str:
+    """Arma el link a pagar-tarjeta.html firmado con LINK_PAGO_SECRET, para que
+    pagos/pagos_tarjeta.py pueda confiar en telegram_user_id/canal_id/email — sin esto, cualquiera
+    podría cambiar esos parámetros a mano en la URL, porque el navegador no tiene ninguna sesión
+    autenticada de Telegram. monto/nombre_canal viajan sin firmar (solo para mostrar en pantalla,
+    el backend siempre resuelve el monto real desde config.json, ver pagos/pagos_tarjeta.py)."""
+    canal_id = canal_cfg["canal_id"]
+    exp = int(time.time()) + _VENTANA_LINK_TARJETA_SEGUNDOS
+    payload = f"{telegram_user_id}:{canal_id}:{email}:{exp}"
+    secreto = context.bot_data["link_pago_secret"]
+    firma = hmac.new(secreto.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    query = urlencode({
+        "telegram_user_id": telegram_user_id,
+        "canal_id": canal_id,
+        "email": email,
+        "exp": exp,
+        "sig": firma,
+        "monto": canal_cfg["monto"],
+        "nombre_canal": canal_cfg["nombre"],
+    })
+    return f"{URL_PAGO_TARJETA}?{query}"
+
+
 async def _avisar_pago_pendiente_vencido(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Edita el mensaje del intento de pago anterior (si lo hay) para avisar que ese link ya no
     sirve — solo prolijidad visual, la preapproval de atrás ya se cancela aparte
@@ -465,8 +501,10 @@ async def cb_confirmar_email_vip(update: Update, context: ContextTypes.DEFAULT_T
         )
         return
 
+    link_tarjeta = _firmar_link_tarjeta(telegram_user_id, email, canal_cfg, context)
     teclado = InlineKeyboardMarkup([
         [InlineKeyboardButton("💳 Pagar suscripción", url=init_point)],
+        [InlineKeyboardButton("💳 Pagar con tarjeta (sin cuenta MercadoPago)", url=link_tarjeta)],
         [InlineKeyboardButton("✏️ Usar otro correo", callback_data="reescribir_email_vip")],
         [InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")],
     ])
@@ -637,9 +675,14 @@ def main() -> None:
     if not database_url:
         raise SystemExit("Falta DATABASE_URL en bot/.env")
 
+    link_pago_secret = os.environ.get("LINK_PAGO_SECRET")
+    if not link_pago_secret:
+        raise SystemExit("Falta LINK_PAGO_SECRET en bot/.env")
+
     app = Application.builder().token(token).post_init(_post_init).build()
     app.bot_data["database_url"] = database_url
     app.bot_data["mp_sdk"] = mercadopago.SDK(mp_access_token)
+    app.bot_data["link_pago_secret"] = link_pago_secret
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(cb_suscribirme, pattern="^suscribirme_"))
