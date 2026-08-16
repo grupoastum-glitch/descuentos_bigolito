@@ -512,8 +512,10 @@ async def cb_confirmar_email_vip(update: Update, context: ContextTypes.DEFAULT_T
     ])
     await _mostrar(
         update, context,
-        f"Listo 🙌 Tocá el botón para completar el pago y activar tu {canal_cfg['nombre']}:\n\n"
-        "(Si te equivocaste de correo y tu pago fue rechazado, tocá \"Usar otro correo\".)",
+        f"Listo 🙌 Elegí cómo pagar tu {canal_cfg['nombre']}:\n\n"
+        "💳 *MercadoPago*\n"
+        "💳 *Pagar con tarjeta*\n\n"
+        "(Si elegiste MercadoPago y tu pago fue rechazado, tocá \"Usar otro correo\".)",
         teclado,
     )
     context.user_data["pago_pendiente_msg_id"] = query.message.message_id
