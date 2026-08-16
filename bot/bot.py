@@ -9,6 +9,7 @@ la próxima interacción, sin reiniciar el proceso.
 import json
 import logging
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -49,6 +50,10 @@ CANAL_CHAT_ID = {
     "test2": [("CAMBIAR_POR_CHAT_ID_REAL", "Canal Test 2")],  # canal de prueba, todavía no existe en Telegram
 }
 TZ_CHILE = ZoneInfo("America/Santiago")  # acceso_hasta se guarda en UTC — convertir antes de mostrar
+# ventana para no repetir el aviso de "solicitud aprobada" en cb_solicitud_union: un canal_id con
+# varios chats (ej. "vip" = 4) genera una solicitud de unión por chat, y el usuario suele tocar
+# los links casi al mismo tiempo — sin esto le llegarían N DMs idénticos seguidos.
+VENTANA_DEBOUNCE_APROBACION_SEGUNDOS = 10
 # mismo back_url usado al crear el Preapproval Plan (ver PLAN_canal_vip_mercadopago.md) — a dónde
 # vuelve el usuario después de autorizar el pago en MercadoPago.
 BACK_URL_MERCADOPAGO = "https://t.me/descuentos_bigolito_cl_bot"
@@ -492,6 +497,17 @@ async def cb_solicitud_union(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if activo:
         await solicitud.approve()
         log.info("Solicitud de unión aprobada: %s (canal %s)", solicitud.from_user.id, canal_id)
+
+        # Debounce: un canal_id con varios chats (ver CANAL_CHAT_ID) genera una solicitud por
+        # chat, y el usuario suele tocar todos los links casi al mismo tiempo — sin esto le
+        # llegaría el mismo DM una vez por chat aprobado.
+        avisos = context.user_data.setdefault("ultimo_aviso_aprobacion", {})
+        ahora = time.monotonic()
+        ultimo_aviso = avisos.get(canal_id)
+        if ultimo_aviso is not None and ahora - ultimo_aviso < VENTANA_DEBOUNCE_APROBACION_SEGUNDOS:
+            return
+        avisos[canal_id] = ahora
+
         try:
             # Telegram no siempre lleva al usuario al canal solo tras aprobar una solicitud de
             # unión — sin este aviso, un usuario común se queda esperando sin saber que ya puede
