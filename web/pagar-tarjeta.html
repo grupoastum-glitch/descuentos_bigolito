@@ -63,6 +63,19 @@
       </a>
     </div>
 
+    <!-- Estado: ya tenía una suscripción activa (por este medio o por MercadoPago) -->
+    <div id="estado-ya-activo" class="hidden flex-1 flex-col items-center justify-center gap-4 text-center">
+      <p class="text-4xl">✅</p>
+      <p class="text-base font-semibold">Ya tenés tu suscripción activa</p>
+      <p class="text-sm text-gray-500 dark:text-neutral-400">
+        No te cobramos de nuevo. Volvé a Telegram para ver tus canales.
+      </p>
+      <a href="https://t.me/descuentos_bigolito_cl_bot"
+         class="mt-2 rounded-full bg-marca px-6 py-3 text-sm font-semibold text-white active:scale-95">
+        Volver a Telegram
+      </a>
+    </div>
+
     <!-- Estado: formulario de pago (Card Payment Brick de MercadoPago) -->
     <div id="estado-formulario" class="hidden flex-1 flex-col">
       <p class="mb-1 text-sm text-gray-500 dark:text-neutral-400">Suscripción</p>
@@ -154,6 +167,11 @@
 
       if (respuesta.ok && datos.status === 'ok') {
         mostrarEstado('estado-exito');
+        return;
+      }
+
+      if (datos.error === 'ya_activo') {
+        mostrarEstado('estado-ya-activo');
         return;
       }
 

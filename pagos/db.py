@@ -108,6 +108,20 @@ async def marcar_estado(pool: asyncpg.Pool, telegram_user_id: int, canal_id: str
         )
 
 
+async def esta_activo(pool: asyncpg.Pool, telegram_user_id: int, canal_id: str) -> bool:
+    """Duplicado a propósito de bot/db.py::esta_activo (mismo criterio que otras constantes
+    chicas entre servicios independientes, ej. CANAL_CHAT_ID). Usado por
+    pagos/pagos_tarjeta.py para no cobrar una tarjeta nueva si el usuario ya tiene una
+    suscripción activa vigente por cualquiera de los dos métodos de pago — sin este chequeo,
+    alguien podría pagar dos veces si toca los dos botones de pago del mismo mensaje."""
+    async with pool.acquire() as con:
+        fila = await con.fetchrow(
+            "SELECT estado FROM suscripciones WHERE telegram_user_id = $1 AND canal_id = $2",
+            telegram_user_id, canal_id,
+        )
+    return fila is not None and fila["estado"] == "activa"
+
+
 async def listar_activas(pool: asyncpg.Pool) -> list[dict]:
     """Usado por pagos/reconciliacion.py: todas las suscripciones que hoy están marcadas como
     activas localmente, para volver a confirmar contra la API de MercadoPago."""

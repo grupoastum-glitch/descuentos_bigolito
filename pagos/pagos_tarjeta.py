@@ -22,6 +22,7 @@ from mercadopago.errors.exceptions import MercadoPagoError
 
 import config
 import config_canales
+import db
 import mercadopago_client
 
 log = logging.getLogger("pagos.pagos_tarjeta")
@@ -63,6 +64,20 @@ async def crear_pago_tarjeta(request: Request) -> JSONResponse:
 
     if not _firma_valida(telegram_user_id, canal_id, email, exp, sig):
         return JSONResponse({"error": "link_invalido_o_vencido"}, status_code=401)
+
+    try:
+        telegram_user_id_int = int(telegram_user_id)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "faltan_campos"}, status_code=400)
+
+    # sin este chequeo, alguien podría pagar dos veces: el mensaje del bot muestra los dos
+    # botones de pago juntos, y si ya pagó con uno (MercadoPago o tarjeta), este endpoint
+    # cobraría una tarjeta nueva igual si vuelve a tocar "Pagar con tarjeta" en el mismo mensaje
+    # — cancelar_preapprovals_anteriores (más abajo) cancela la suscripción vieja, pero no
+    # devuelve lo que ya se cobró.
+    pool = await db.conectar()
+    if await db.esta_activo(pool, telegram_user_id_int, canal_id):
+        return JSONResponse({"error": "ya_activo"}, status_code=200)
 
     try:
         canal_cfg = config_canales.canales_pagos().get(canal_id)
