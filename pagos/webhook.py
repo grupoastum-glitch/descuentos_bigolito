@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
+from mercadopago.errors.exceptions import MPNotFoundError
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
@@ -70,13 +71,28 @@ async def recibir_webhook(request: Request) -> JSONResponse:
 
     pool = await db.conectar()
 
+    # MPNotFoundError (404): el recurso que referencia esta notificación no existe en MercadoPago
+    # — no tiene sentido que MP reintente algo que nunca va a dejar de fallar (típicamente el
+    # data.id de prueba que manda el botón "Simular" del dashboard, ver traceback real que
+    # motivó esto). Se responde 200 para frenar los reintentos y se loguea como warning, sin
+    # traceback. Cualquier OTRO error (timeout, 5xx de MercadoPago, etc.) sigue sin atajarse acá
+    # a propósito: ahí sí conviene que la excepción se propague a un 500, para que MercadoPago
+    # reintente la entrega — podría tratarse de un problema transitorio real.
     if topic in _TOPICS_PREAPPROVAL:
         # obtener_preapproval hace una request HTTP síncrona (SDK de MercadoPago) — se corre en
         # un thread aparte para no bloquear el event loop mientras espera la respuesta.
-        preapproval = await run_in_threadpool(mercadopago_client.obtener_preapproval, data_id)
+        try:
+            preapproval = await run_in_threadpool(mercadopago_client.obtener_preapproval, data_id)
+        except MPNotFoundError:
+            log.warning("Preapproval %s no existe en MercadoPago (topic '%s') — se ignora.", data_id, topic)
+            return JSONResponse({"status": "preapproval inexistente"}, status_code=200)
         await logica.aplicar_estado_preapproval(pool, preapproval)
     else:
-        invoice = await run_in_threadpool(mercadopago_client.obtener_invoice, data_id)
+        try:
+            invoice = await run_in_threadpool(mercadopago_client.obtener_invoice, data_id)
+        except MPNotFoundError:
+            log.warning("Invoice %s no existe en MercadoPago (topic '%s') — se ignora.", data_id, topic)
+            return JSONResponse({"status": "invoice inexistente"}, status_code=200)
         await logica.aplicar_pago_recurrente(pool, invoice)
 
     return JSONResponse({"status": "ok"}, status_code=200)
