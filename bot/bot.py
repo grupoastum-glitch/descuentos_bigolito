@@ -132,6 +132,8 @@ def texto_bienvenida(config: dict) -> str:
             continue
         if canal.get("descripcion"):
             texto += f"\n\n*{canal['descripcion']}*"
+            for nombre_canal in canal.get("canales_incluidos") or []:
+                texto += f"\n• {nombre_canal}"
             if canal.get("nota"):
                 texto += f"\n_{canal['nota']}_"
 
