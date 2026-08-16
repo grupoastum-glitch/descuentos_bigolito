@@ -202,6 +202,52 @@ async def _enviar_con_reintento(bot: Bot, chat_id: str, oferta: dict) -> bool:
     return False
 
 
+async def _publicar_canal(
+    bot: Bot,
+    chat_id: str,
+    ofertas: list[dict],
+    ids_confirmados: set[str],
+    on_publicada: Callable[[dict], Awaitable[None]] | None,
+) -> None:
+    """Publica en orden las ofertas de UN canal, respetando su propio throttle de
+    TELEGRAM_DELAY_SEGUNDOS. Pensado para correr en paralelo con los workers de los demás
+    canales (ver publicar_ofertas_nuevas) — el límite de flood control de Telegram es por chat,
+    no global del bot, así que un canal lento no le roba tiempo de espera a otro."""
+    ultimo_posteo: float | None = None
+    for oferta in ofertas:
+        if ultimo_posteo is not None:
+            espera = config.TELEGRAM_DELAY_SEGUNDOS - (time.monotonic() - ultimo_posteo)
+            if espera > 0:
+                await asyncio.sleep(espera)
+
+        try:
+            publicado = await _enviar_con_reintento(bot, chat_id, oferta)
+            if publicado:
+                log.info("Publicado en %s: %s", chat_id, oferta["titulo"])
+                ids_confirmados.add(oferta["id"])
+                if on_publicada is not None:
+                    try:
+                        await on_publicada(oferta)
+                    except Exception:
+                        # un error transitorio (ej. de la base de datos) no debe cortar el
+                        # envío del resto — la peor consecuencia es la misma que existía
+                        # antes de este callback (una posible republicación futura), no
+                        # perder el envío que ya se hizo.
+                        log.exception(
+                            "on_publicada falló para %s — el mensaje SÍ se mandó a Telegram, "
+                            "el evento de historial no quedó registrado.", oferta["id"],
+                        )
+            else:
+                log.error(
+                    "Se agotaron los reintentos por flood control en %s para la oferta %s — "
+                    "sigue disponible como candidata, se reintenta en la próxima corrida",
+                    chat_id, oferta["id"],
+                )
+        except TelegramError:
+            log.exception("Falló el posteo a %s para la oferta %s", chat_id, oferta["id"])
+        ultimo_posteo = time.monotonic()
+
+
 async def publicar_ofertas_nuevas(
     ofertas: list[dict],
     on_publicada: Callable[[dict], Awaitable[None]] | None = None,
@@ -209,7 +255,13 @@ async def publicar_ofertas_nuevas(
     """Intenta publicar cada oferta en su canal. Por cada una que se manda de verdad, llama
     `on_publicada(oferta)` (si se pasó) para que el caller persista el evento de historial al
     toque — no hace falta esperar a que termine todo el loop (ver ofertas_writer.registrar_evento_publicado).
-    Devuelve igual el set completo de `id` confirmados, útil para logging/observabilidad."""
+    Devuelve igual el set completo de `id` confirmados, útil para logging/observabilidad.
+
+    Los canales se publican en paralelo, uno por canal (ver _publicar_canal) — con miles de
+    candidatas en una corrida grande, un solo loop secuencial para todos los canales hacía que
+    el canal más liviano esperara horas detrás del más pesado (ej. Falabella/Sodimac) aunque el
+    límite de flood control de Telegram sea por chat, no global. Agrupar por canal preserva el
+    mismo throttle de TELEGRAM_DELAY_SEGUNDOS por canal, solo que ya no se bloquean entre sí."""
     ids_confirmados: set[str] = set()
     if not ofertas:
         return ids_confirmados
@@ -217,53 +269,25 @@ async def publicar_ofertas_nuevas(
         log.warning("TELEGRAM_BOT_TOKEN no configurado, se omite el posteo a canales")
         return ids_confirmados
 
+    ofertas_por_canal: dict[str, list[dict]] = {}
+    for oferta in ofertas:
+        valor = config.CANAL_TELEGRAM_USERNAME.get(oferta.get("canal"))
+        if not valor:
+            # tier sin canal activo todavía (ver config.CANAL_TELEGRAM_USERNAME) — se omite,
+            # sigue disponible como candidata en la próxima corrida (no se confirma acá)
+            continue
+        # canal privado (sin @username, ver config.CANAL_TELEGRAM_USERNAME): la Bot API lo
+        # direcciona por su chat_id numérico, siempre negativo — canal público: por @username.
+        chat_id = valor if valor.startswith("-") else f"@{valor}"
+        ofertas_por_canal.setdefault(chat_id, []).append(oferta)
+
     bot = Bot(token=config.TELEGRAM_BOT_TOKEN)
-    ultimo_posteo_por_canal: dict[str, float] = {}
     async with bot:
-        for oferta in ofertas:
-            valor = config.CANAL_TELEGRAM_USERNAME.get(oferta.get("canal"))
-            if not valor:
-                # tier sin canal activo todavía (ver config.CANAL_TELEGRAM_USERNAME) — se omite,
-                # sigue disponible como candidata en la próxima corrida (no se confirma acá)
-                continue
-            # canal privado (sin @username, ver config.CANAL_TELEGRAM_USERNAME): la Bot API lo
-            # direcciona por su chat_id numérico, siempre negativo — canal público: por @username.
-            chat_id = valor if valor.startswith("-") else f"@{valor}"
-
-            # el límite de flood control de Telegram es por chat, no global del bot — dos
-            # posteos seguidos a canales distintos no compiten por el mismo límite. Además,
-            # espaciar solo por canal (no global) hace que cada canal se sienta fluido por su
-            # cuenta, sin que el ritmo de uno le "robe" tiempo de espera al otro.
-            ultimo_posteo = ultimo_posteo_por_canal.get(chat_id)
-            if ultimo_posteo is not None:
-                espera = config.TELEGRAM_DELAY_SEGUNDOS - (time.monotonic() - ultimo_posteo)
-                if espera > 0:
-                    await asyncio.sleep(espera)
-
-            try:
-                publicado = await _enviar_con_reintento(bot, chat_id, oferta)
-                if publicado:
-                    log.info("Publicado en %s: %s", chat_id, oferta["titulo"])
-                    ids_confirmados.add(oferta["id"])
-                    if on_publicada is not None:
-                        try:
-                            await on_publicada(oferta)
-                        except Exception:
-                            # un error transitorio (ej. de la base de datos) no debe cortar el
-                            # envío del resto — la peor consecuencia es la misma que existía
-                            # antes de este callback (una posible republicación futura), no
-                            # perder el envío que ya se hizo.
-                            log.exception(
-                                "on_publicada falló para %s — el mensaje SÍ se mandó a Telegram, "
-                                "el evento de historial no quedó registrado.", oferta["id"],
-                            )
-                else:
-                    log.error(
-                        "Se agotaron los reintentos por flood control en %s para la oferta %s — "
-                        "sigue disponible como candidata, se reintenta en la próxima corrida",
-                        chat_id, oferta["id"],
-                    )
-            except TelegramError:
-                log.exception("Falló el posteo a %s para la oferta %s", chat_id, oferta["id"])
-            ultimo_posteo_por_canal[chat_id] = time.monotonic()
+        await asyncio.gather(
+            *(
+                _publicar_canal(bot, chat_id, ofertas_canal, ids_confirmados, on_publicada)
+                for chat_id, ofertas_canal in ofertas_por_canal.items()
+            ),
+            return_exceptions=True,
+        )
     return ids_confirmados
