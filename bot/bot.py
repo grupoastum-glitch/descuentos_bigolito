@@ -346,7 +346,7 @@ async def _crear_preapproval(
 async def _avisar_pago_pendiente_vencido(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Edita el mensaje del intento de pago anterior (si lo hay) para avisar que ese link ya no
     sirve — solo prolijidad visual, la preapproval de atrás ya se cancela aparte
-    (_cancelar_preapprovals_pendientes). Solo recuerda el intento inmediatamente anterior de esta
+    (_cancelar_preapprovals_anteriores). Solo recuerda el intento inmediatamente anterior de esta
     misma sesión del bot; si no lo encuentra o falló editarlo (mensaje borrado, >48hs, etc.) no
     pasa nada, no es crítico."""
     msg_id = context.user_data.pop("pago_pendiente_msg_id", None)
@@ -362,31 +362,47 @@ async def _avisar_pago_pendiente_vencido(context: ContextTypes.DEFAULT_TYPE) -> 
         pass
 
 
-async def _cancelar_preapprovals_pendientes(
+async def _cancelar_preapprovals_anteriores(
     telegram_user_id: int, canal_id: str, email: str, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Cancela cualquier preapproval 'pending' de este canal que haya quedado de un intento
-    anterior sin completar, para no acumular duplicadas cada vez que el usuario reintenta (bug
-    reproducido en vivo: 6 preapprovals para el mismo usuario en una sola tanda de pruebas). La
-    API de MercadoPago no permite buscar por external_reference/status directo (confirmado contra
+    """Cancela cualquier preapproval anterior de este usuario en este canal que MercadoPago
+    todavía no dejó de cobrar:
+    - 'pending': un intento anterior sin completar, para no acumular duplicadas cada vez que el
+      usuario reintenta (bug reproducido en vivo: 6 preapprovals para el mismo usuario en una
+      sola tanda de pruebas).
+    - 'authorized': una suscripción vieja que dejó de renovarse bien (ej. tarjeta rechazada, el
+      usuario fue expulsado por pagos/reconciliacion.py y ahora se resuscribe a mano acá) pero
+      que MercadoPago nunca canceló del todo — si no se cierra explícitamente, sigue reintentando
+      cobrarla en paralelo con la nueva. Nunca se llega hasta acá con una suscripción realmente
+      vigente: _iniciar_suscripcion ya cortó antes si esta_activo() daba True, así que cualquier
+      'authorized' que aparezca en esta búsqueda es necesariamente una vieja huérfana.
+
+    No se toca 'cancelled'/'paused' (ya no cobran) ni preapprovals de otro canal. La API de
+    MercadoPago no permite buscar por external_reference/status directo (confirmado contra
     mercadopago/resources/preapproval.py y la doc de /preapproval/search) — se busca por
-    payer_email y se filtra acá. Best-effort: un fallo acá no debe impedir que el usuario cree su
-    preapproval nueva."""
-    referencia_esperada = f"{telegram_user_id}:{canal_id}"
+    payer_email y se filtra acá por el prefijo "{telegram_user_id}:{canal_id}" del
+    external_reference, no por el valor completo: acepta tanto el formato viejo de 2 partes como
+    el actual de 3 (con el email, ver _crear_preapproval), y no depende de que el email de una
+    suscripción anterior coincida carácter a carácter con el que se está usando ahora. Best-effort:
+    un fallo acá no debe impedir que el usuario cree su preapproval nueva."""
+    prefijo_esperado = f"{telegram_user_id}:{canal_id}"
     try:
         resultado = context.bot_data["mp_sdk"].preapproval().search({"payer_email": email})
         resultado.raise_for_status()
     except Exception:
-        log.exception("Falló la búsqueda de preapprovals pendientes para %s", telegram_user_id)
+        log.exception("Falló la búsqueda de preapprovals anteriores para %s", telegram_user_id)
         return
 
     for item in resultado["response"].get("results", []):
-        if item.get("status") != "pending" or item.get("external_reference") != referencia_esperada:
+        if item.get("status") not in ("pending", "authorized"):
+            continue
+        referencia = item.get("external_reference") or ""
+        if referencia != prefijo_esperado and not referencia.startswith(prefijo_esperado + ":"):
             continue
         try:
             context.bot_data["mp_sdk"].preapproval().update(item["id"], {"status": "cancelled"})
         except Exception:
-            log.exception("Falló la cancelación de la preapproval pendiente %s", item["id"])
+            log.exception("Falló la cancelación de la preapproval anterior %s", item["id"])
 
 
 def teclado_error_preapproval(canal_id: str) -> InlineKeyboardMarkup:
@@ -438,7 +454,7 @@ async def cb_confirmar_email_vip(update: Update, context: ContextTypes.DEFAULT_T
     telegram_user_id = update.effective_user.id
     await db.actualizar_email(context.bot_data["db_pool"], telegram_user_id, canal_id, email)
     await _avisar_pago_pendiente_vencido(context)
-    await _cancelar_preapprovals_pendientes(telegram_user_id, canal_id, email, context)
+    await _cancelar_preapprovals_anteriores(telegram_user_id, canal_id, email, context)
     init_point = await _crear_preapproval(telegram_user_id, email, canal_cfg, context)
     if not init_point:
         await _mostrar(
