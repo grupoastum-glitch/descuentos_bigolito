@@ -26,7 +26,7 @@
       "canal_id": "vip",
       "nombre": "Descuentos VIP",
       "nombre_corto": "VIP",
-      "descripcion": "Accede a varios canales VIP con descuentos del 50% y más, por $3.000/mes.",
+      "descripcion": "Accede a varios canales VIP con descuentos del 50% y más, solo por:\n\n$3.000/mes.",
       "canales_incluidos": ["Retail VIP 💎", "Geek VIP 🕹️", "Deco/Hogar VIP 🏠", "Tech VIP 🖥"],
       "nota": "Pago seguro con MercadoPago, cancelás cuando quieras.",
       "monto": 1000,
