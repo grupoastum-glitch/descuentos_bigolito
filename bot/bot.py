@@ -102,7 +102,10 @@ def teclado_inicio(config: dict) -> InlineKeyboardMarkup | None:
         # suscripción activa (ver cb_solicitud_union). La web tiene su propio botón fijo para el
         # VIP (clave "vip" de config.json) que apunta al bot, mismo flujo.
         filas.append(
-            [InlineKeyboardButton(f"{canal['nombre']} 👑", callback_data=f"suscribirme_{canal['canal_id']}")]
+            [InlineKeyboardButton(
+                f"Suscribirme {canal.get('nombre_corto', canal['nombre'])} 👑",
+                callback_data=f"suscribirme_{canal['canal_id']}",
+            )]
         )
     filas.append([InlineKeyboardButton("📡 Ver mis canales", callback_data="ver_mis_canales")])
     if contacto and contacto.get("url"):
