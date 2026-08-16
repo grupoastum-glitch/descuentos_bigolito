@@ -304,10 +304,12 @@ async def _iniciar_suscripcion(
     await _mostrar(
         update,
         context,
-        f"{intro}El pago es 100% seguro con MercadoPago y podés cancelar cuando quieras.\n\n"
+        f"{intro}El pago es 100% seguro y podés cancelar cuando quieras. Tenés 2 alternativas:\n"
+        "1. con tu cuenta de MercadoPago,\n"
+        "2. directo con tarjeta, sin necesitar cuenta.\n\n"
         "Para arrancar, decime tu email 👇\n\n"
-        "_Tip: indicá el correo que usás en tu app de MercadoPago (si no, el pago va a ser "
-        "rechazado)._",
+        "_Tip: el correo solo tiene que coincidir con tu cuenta de MercadoPago si elegís pagar "
+        "por esa vía. Si pagás con tarjeta, cualquier correo válido sirve._",
         teclado,
     )
 
