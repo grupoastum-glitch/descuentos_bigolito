@@ -404,15 +404,23 @@ async def _crear_preapproval(
         try:
             resultado = context.bot_data["mp_sdk"].preapproval().create(payload)
             resultado.raise_for_status()
-        except MPServerError:
+        except MPServerError as error:
+            # request_id y causes vienen del propio SDK (ver mercadopago/errors/exceptions.py) —
+            # request_id es el identificador que pide soporte de MercadoPago para rastrear un
+            # request puntual en sus logs internos; sin esto, un reclamo de soporte no tiene con
+            # qué buscar del otro lado.
+            detalle = f"request_id={error.request_id} causes={error.causes}"
             if intento < intentos:
                 log.warning(
                     "MercadoPago devolvió error de servidor creando preapproval para %s "
-                    "(intento %s/%s), reintentando...", telegram_user_id, intento, intentos,
+                    "(intento %s/%s, %s), reintentando...", telegram_user_id, intento, intentos, detalle,
                 )
                 await asyncio.sleep(2)
                 continue
-            log.exception("Falló la creación de preapproval para %s tras %s intentos", telegram_user_id, intentos)
+            log.exception(
+                "Falló la creación de preapproval para %s tras %s intentos (%s)",
+                telegram_user_id, intentos, detalle,
+            )
             return None
         except Exception:
             log.exception("Falló la creación de preapproval para %s", telegram_user_id)
