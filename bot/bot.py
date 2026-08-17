@@ -204,6 +204,29 @@ async def capturar_usuario(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         log.exception("No se pudo actualizar el username de %s", update.effective_user.id)
 
 
+async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Resumen de ventas para el admin — registrado en main() con filters.User(user_id=admin_id),
+    así que este handler solo se dispara si el remitente es esa cuenta; para cualquier otra
+    persona, /stats cae al mismo MessageHandler de "comando desconocido" que ya existe, sin
+    revelar que el comando existe. Sin parse_mode: el texto solo interpola números que nosotros
+    formateamos, no hace falta Markdown ni el riesgo de que rompa el parseo."""
+    stats = await db.estadisticas(context.bot_data["db_pool"])
+
+    def _moneda(monto: int) -> str:
+        return f"${monto:,}".replace(",", ".")
+
+    texto = (
+        "📊 Estadísticas de suscripciones\n\n"
+        f"👥 Activos ahora: {stats['activos_ahora']}\n"
+        f"🆕 Altas totales: {stats['altas']}\n"
+        f"🔁 Renovaciones totales: {stats['renovaciones']}\n"
+        f"👤 Personas distintas que pagaron: {stats['personas_unicas']}\n"
+        f"💰 Ingresos totales: {_moneda(stats['ingresos_totales'])}\n"
+        f"💰 Ingresos este mes: {_moneda(stats['ingresos_mes'])}"
+    )
+    await update.message.reply_text(texto)
+
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     config = cargar_config()
     # deep link `/start sus_<canal_id>` (ej. https://t.me/bot?start=sus_test2): dispara el flujo
@@ -701,6 +724,20 @@ def main() -> None:
     if not link_pago_secret:
         raise SystemExit("Falta LINK_PAGO_SECRET en bot/.env")
 
+    # /stats (comando admin-only, ver cmd_stats): a diferencia de las env vars de arriba, no es
+    # fatal si falta — el bot debe seguir arrancando para los usuarios reales aunque esta
+    # variable de conveniencia no esté configurada. Si falta o no es un entero válido, admin_id
+    # queda en None y el CommandHandler de /stats directamente no se registra más abajo.
+    admin_id_str = os.environ.get("BOT_ADMIN_TELEGRAM_USER_ID")
+    admin_id: int | None = None
+    if admin_id_str:
+        try:
+            admin_id = int(admin_id_str)
+        except ValueError:
+            log.warning("BOT_ADMIN_TELEGRAM_USER_ID=%r no es un entero válido — /stats deshabilitado.", admin_id_str)
+    else:
+        log.warning("BOT_ADMIN_TELEGRAM_USER_ID no configurado — /stats deshabilitado.")
+
     app = Application.builder().token(token).post_init(_post_init).build()
     app.bot_data["database_url"] = database_url
     app.bot_data["mp_sdk"] = mercadopago.SDK(mp_access_token)
@@ -714,6 +751,8 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(cb_volver_menu, pattern="^volver_menu$"))
     app.add_handler(CallbackQueryHandler(cb_ver_mis_canales, pattern="^ver_mis_canales$"))
     app.add_handler(ChatJoinRequestHandler(cb_solicitud_union))
+    if admin_id is not None:
+        app.add_handler(CommandHandler("stats", cmd_stats, filters=filters.User(user_id=admin_id)))
     app.add_handler(MessageHandler(filters.COMMAND | filters.TEXT, mensaje_no_reconocido))
     app.add_error_handler(manejar_error)
 

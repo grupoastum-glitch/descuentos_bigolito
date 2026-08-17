@@ -3,7 +3,9 @@ resto de las operaciones) — usado únicamente para aprobar o rechazar solicitu
 VIP en bot.py::cb_solicitud_union, comparando la identidad de quien pide entrar contra el estado
 real de su suscripción.
 
-Excepciones a "solo lectura": actualizar_email() y actualizar_username() — ver sus docstrings."""
+Excepciones a "solo lectura": actualizar_email() y actualizar_username() — ver sus docstrings.
+estadisticas() también es de solo lectura, pero contra pagos_historial (tabla nueva, ver
+pagos/db.py), no contra suscripciones."""
 from __future__ import annotations
 
 import logging
@@ -96,3 +98,24 @@ async def actualizar_username(pool: asyncpg.Pool, telegram_user_id: int, usernam
                    username = EXCLUDED.username, actualizado_en = EXCLUDED.actualizado_en""",
             telegram_user_id, username,
         )
+
+
+async def estadisticas(pool: asyncpg.Pool) -> dict:
+    """Resumen histórico de ventas para el comando /stats admin-only (ver bot.py::cmd_stats).
+    Dos queries porque activos_ahora sale de suscripciones (estado actual) y el resto de
+    pagos_historial (una fila por venta confirmada, ver pagos/db.py). COUNT(*) siempre da 0 sobre
+    una tabla vacía, pero SUM da NULL — de ahí el COALESCE en los ingresos."""
+    async with pool.acquire() as con:
+        activos_ahora = await con.fetchval(
+            "SELECT COUNT(*) FROM suscripciones WHERE estado = 'activa'"
+        )
+        fila = await con.fetchrow(
+            """SELECT
+                   COUNT(*) FILTER (WHERE tipo = 'alta') AS altas,
+                   COUNT(*) FILTER (WHERE tipo = 'renovacion') AS renovaciones,
+                   COUNT(DISTINCT telegram_user_id) AS personas_unicas,
+                   COALESCE(SUM(monto), 0) AS ingresos_totales,
+                   COALESCE(SUM(monto) FILTER (WHERE creado_en >= date_trunc('month', now())), 0) AS ingresos_mes
+               FROM pagos_historial"""
+        )
+    return {"activos_ahora": activos_ahora, **dict(fila)}

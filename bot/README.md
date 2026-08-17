@@ -24,9 +24,12 @@ probarlo en local.
 | Comando | Qué hace | De dónde saca los datos |
 |---|---|---|
 | `/start` | Bienvenida + menú de botones (canales, VIP, ayuda, información) | `marca`, `canales`, `vip`, `contacto` |
+| `/stats` | Oculto, admin-only (`BOT_ADMIN_TELEGRAM_USER_ID` en `.env`): resumen de altas, renovaciones e ingresos | `pagos_historial` y `suscripciones` (Postgres, ver `bot/db.py::estadisticas`) |
 
-Toda la interacción con el bot pasa por los botones del menú de `/start`, no por comandos de
-texto adicionales.
+Toda la interacción con el bot para usuarios normales pasa por los botones del menú de
+`/start`, no por comandos de texto adicionales. `/stats` es la única excepción — a propósito no
+figura en `config.json::bot.comandos` (el autocompletado de Telegram), para no revelar que
+existe a nadie que no sea el admin.
 
 ## Perfil del bot (descripción, bio, menú de comandos)
 
