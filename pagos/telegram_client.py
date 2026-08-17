@@ -66,7 +66,7 @@ async def invitar(telegram_user_id: int, canal_id: str) -> None:
         try:
             await bot.send_message(
                 chat_id=telegram_user_id,
-                text="✅ ¡Pago confirmado! Tocá el botón para entrar (invitación válida solo para vos):",
+                text="✅ ¡Pago confirmado! Toca el botón para entrar (invitación válida solo para ti):",
                 reply_markup=InlineKeyboardMarkup(botones),
             )
         except TelegramError:
@@ -111,8 +111,8 @@ async def expulsar(telegram_user_id: int, canal_id: str) -> None:
             await bot.send_message(
                 chat_id=telegram_user_id,
                 text=(
-                    "Tu acceso a este canal terminó. Si querés seguir recibiendo las ofertas "
-                    "exclusivas, renová tu suscripción:"
+                    "Tu acceso a este canal terminó. Si quieres seguir recibiendo las ofertas "
+                    "exclusivas, renueva tu suscripción:"
                 ),
                 reply_markup=teclado,
             )

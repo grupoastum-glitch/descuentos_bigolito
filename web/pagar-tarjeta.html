@@ -55,7 +55,7 @@
       <p class="text-4xl">⏱️</p>
       <p class="text-base font-semibold">Este link ya no es válido</p>
       <p class="text-sm text-gray-500 dark:text-neutral-400">
-        Volvé al bot de Telegram y tocá de nuevo el botón "Pagar con tarjeta" para generar uno nuevo.
+        Vuelve al bot de Telegram y toca de nuevo el botón "Pagar con tarjeta" para generar uno nuevo.
       </p>
       <a href="https://t.me/descuentos_bigolito_cl_bot"
          class="mt-2 rounded-full bg-marca px-6 py-3 text-sm font-semibold text-white active:scale-95">
@@ -66,9 +66,9 @@
     <!-- Estado: ya tenía una suscripción activa (por este medio o por MercadoPago) -->
     <div id="estado-ya-activo" class="hidden flex-1 flex-col items-center justify-center gap-4 text-center">
       <p class="text-4xl">✅</p>
-      <p class="text-base font-semibold">Ya tenés tu suscripción activa</p>
+      <p class="text-base font-semibold">Ya tienes tu suscripción activa</p>
       <p class="text-sm text-gray-500 dark:text-neutral-400">
-        No te cobramos de nuevo. Volvé a Telegram para ver tus canales.
+        No te cobramos de nuevo. Vuelve a Telegram para ver tus canales.
       </p>
       <a href="https://t.me/descuentos_bigolito_cl_bot"
          class="mt-2 rounded-full bg-marca px-6 py-3 text-sm font-semibold text-white active:scale-95">
@@ -89,7 +89,7 @@
       <p class="text-4xl">✅</p>
       <p class="text-base font-semibold">¡Listo! Tu pago fue aprobado</p>
       <p class="text-sm text-gray-500 dark:text-neutral-400">
-        Volvé a Telegram — en unos segundos te va a llegar la invitación a tus canales VIP.
+        Vuelve a Telegram — en unos segundos te va a llegar la invitación a tus canales VIP.
       </p>
       <a href="https://t.me/descuentos_bigolito_cl_bot"
          class="mt-2 rounded-full bg-marca px-6 py-3 text-sm font-semibold text-white active:scale-95">
@@ -102,7 +102,7 @@
       <p class="text-4xl">⚠️</p>
       <p class="text-base font-semibold">No pudimos procesar el pago</p>
       <p id="mensaje-error" class="text-sm text-gray-500 dark:text-neutral-400">
-        Intentá de nuevo en unos minutos. Si el problema sigue, avisanos desde el bot de Telegram.
+        Intenta de nuevo en unos minutos. Si el problema sigue, avísanos desde el bot de Telegram.
       </p>
       <a href="https://t.me/descuentos_bigolito_cl_bot"
          class="mt-2 rounded-full bg-marca px-6 py-3 text-sm font-semibold text-white active:scale-95">
@@ -178,8 +178,8 @@
       if (datos.error === 'pago_rechazado') {
         const mensajeRechazo = document.getElementById('mensaje-rechazo');
         mensajeRechazo.textContent = datos.detalle
-          ? `Tu tarjeta fue rechazada (${datos.detalle}). Probá con otra tarjeta.`
-          : 'Tu tarjeta fue rechazada. Probá con otra tarjeta.';
+          ? `Tu tarjeta fue rechazada (${datos.detalle}). Prueba con otra tarjeta.`
+          : 'Tu tarjeta fue rechazada. Prueba con otra tarjeta.';
         mensajeRechazo.classList.remove('hidden');
         // se relanza para que el Brick vuelva a habilitar el formulario y tokenice de nuevo en
         // el próximo intento — el token ya usado no sirve para un segundo intento.
@@ -187,7 +187,7 @@
       }
 
       document.getElementById('mensaje-error').textContent =
-        'Intentá de nuevo en unos minutos. Si el problema sigue, avisanos desde el bot de Telegram.';
+        'Intenta de nuevo en unos minutos. Si el problema sigue, avísanos desde el bot de Telegram.';
       mostrarEstado('estado-error');
       throw new Error(datos.error || 'error_desconocido');
     }
@@ -207,7 +207,7 @@
             onError: (error) => {
               console.error('Card Payment Brick error:', error);
               document.getElementById('mensaje-error').textContent =
-                'No pudimos cargar el formulario de pago. Recargá la página e intentá de nuevo.';
+                'No pudimos cargar el formulario de pago. Recarga la página e intenta de nuevo.';
               mostrarEstado('estado-error');
             },
           },
@@ -215,7 +215,7 @@
       } catch (error) {
         console.error(error);
         document.getElementById('mensaje-error').textContent =
-          'No pudimos cargar el formulario de pago. Recargá la página e intentá de nuevo.';
+          'No pudimos cargar el formulario de pago. Recarga la página e intenta de nuevo.';
         mostrarEstado('estado-error');
       }
     }

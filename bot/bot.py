@@ -247,7 +247,7 @@ async def cb_ver_mis_canales(update: Update, context: ContextTypes.DEFAULT_TYPE)
             filas.append([InlineKeyboardButton(etiqueta, url=invite.invite_link)])
 
     filas.append([InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")])
-    texto = "📡 Estos son los canales a los que tenés acceso:"
+    texto = "📡 Estos son los canales a los que tienes acceso:"
     await _mostrar(update, context, texto, InlineKeyboardMarkup(filas))
 
 
@@ -273,11 +273,11 @@ async def _iniciar_suscripcion(
     # authorized en paralelo (doble cobro real), no solo una pendiente duplicada.
     telegram_user_id = update.effective_user.id
     if await db.esta_activo(context.bot_data["db_pool"], telegram_user_id, canal_id):
-        texto = f"Ya tenés tu suscripción a {canal_cfg['nombre']} activa ✅"
+        texto = f"Ya tienes tu suscripción a {canal_cfg['nombre']} activa ✅"
         acceso_hasta = await db.obtener_acceso_hasta(context.bot_data["db_pool"], telegram_user_id, canal_id)
         if acceso_hasta:
             fecha_local = acceso_hasta.astimezone(TZ_CHILE).strftime("%d/%m/%Y")
-            texto += f"\n\nTenés acceso hasta el {fecha_local}."
+            texto += f"\n\nTienes acceso hasta el {fecha_local}."
         teclado = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")]])
         await _mostrar(update, context, texto, teclado)
         return
@@ -295,7 +295,7 @@ async def _iniciar_suscripcion(
             [InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")],
         ])
         await _mostrar(
-            update, context, f"{intro}¿Seguís usando este correo: {email_seguro}?", teclado
+            update, context, f"{intro}¿Sigues usando este correo: {email_seguro}?", teclado
         )
         return
 
@@ -304,12 +304,12 @@ async def _iniciar_suscripcion(
     await _mostrar(
         update,
         context,
-        f"{intro}El pago es 100% seguro y podés cancelar cuando quieras. Tenés 2 alternativas:\n"
+        f"{intro}El pago es 100% seguro y puedes cancelar cuando quieras. Tienes 2 alternativas:\n"
         "1. con tu cuenta de MercadoPago,\n"
         "2. directo con tarjeta, sin necesitar cuenta.\n\n"
-        "Para arrancar, decime tu email 👇\n\n"
-        "_Tip: el correo solo tiene que coincidir con tu cuenta de MercadoPago si elegís pagar "
-        "por esa vía. Si pagás con tarjeta, cualquier correo válido sirve._",
+        "Para empezar, dime tu email 👇\n\n"
+        "_Tip: el correo solo tiene que coincidir con tu cuenta de MercadoPago si eliges pagar "
+        "por esa vía. Si pagas con tarjeta, cualquier correo válido sirve._",
         teclado,
     )
 
@@ -459,7 +459,7 @@ async def _procesar_email_vip(update: Update, context: ContextTypes.DEFAULT_TYPE
     email = (update.message.text or "").strip()
     if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
         teclado = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")]])
-        await _mostrar(update, context, "Ese email no es válido 🤔 Probá escribirlo de nuevo:", teclado)
+        await _mostrar(update, context, "Ese email no es válido 🤔 Prueba escribirlo de nuevo:", teclado)
         return
 
     context.user_data["esperando_email_vip"] = False
@@ -488,7 +488,7 @@ async def cb_confirmar_email_vip(update: Update, context: ContextTypes.DEFAULT_T
     canal_cfg = _canales_pagos(config).get(canal_id) if canal_id else None
     if not email or not canal_cfg:
         teclado = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")]])
-        await _mostrar(update, context, "Esta confirmación ya venció. Volvé a tocar el botón para empezar de nuevo:", teclado)
+        await _mostrar(update, context, "Esta confirmación ya venció. Vuelve a tocar el botón para empezar de nuevo:", teclado)
         return
 
     telegram_user_id = update.effective_user.id
@@ -498,7 +498,7 @@ async def cb_confirmar_email_vip(update: Update, context: ContextTypes.DEFAULT_T
     init_point = await _crear_preapproval(telegram_user_id, email, canal_cfg, context)
     if not init_point:
         await _mostrar(
-            update, context, "No pudimos generar el link de pago. Probá de nuevo:",
+            update, context, "No pudimos generar el link de pago. Prueba de nuevo:",
             teclado_error_preapproval(canal_id),
         )
         return
@@ -512,10 +512,10 @@ async def cb_confirmar_email_vip(update: Update, context: ContextTypes.DEFAULT_T
     ])
     await _mostrar(
         update, context,
-        f"Listo 🙌 Elegí cómo pagar tu {canal_cfg['nombre']}:\n\n"
+        f"Listo 🙌 Elige cómo pagar tu {canal_cfg['nombre']}:\n\n"
         "💳 *MercadoPago*\n"
         "💳 *Pagar con tarjeta*\n\n"
-        "(Si elegiste MercadoPago y tu pago fue rechazado, tocá \"Usar otro correo\".)",
+        "(Si elegiste MercadoPago y tu pago fue rechazado, toca \"Usar otro correo\".)",
         teclado,
     )
     context.user_data["pago_pendiente_msg_id"] = query.message.message_id
@@ -530,7 +530,7 @@ async def cb_reescribir_email_vip(update: Update, context: ContextTypes.DEFAULT_
     teclado = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")]])
     await _mostrar(
         update, context,
-        "Dale, escribí tu email de nuevo:",
+        "Escribe tu email de nuevo:",
         teclado,
     )
 
@@ -587,7 +587,7 @@ async def cb_solicitud_union(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 chat_id=solicitud.from_user.id,
                 text=(
                     "✅ ¡Listo! Tu solicitud fue aprobada. Si Telegram no te abrió el canal solo, "
-                    "tocá de nuevo el link que te mandamos."
+                    "toca de nuevo el link que te mandamos."
                 ),
                 reply_markup=InlineKeyboardMarkup(
                     [[InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")]]
@@ -608,7 +608,7 @@ async def cb_solicitud_union(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 chat_id=solicitud.from_user.id,
                 text=(
                     "No pudimos darte acceso: no encontramos una suscripción activa a tu nombre. "
-                    f"Si ya pagaste y creés que es un error, escribinos. Si no, sumate a {nombre_canal} acá:"
+                    f"Si ya pagaste y crees que es un error, escríbenos. Si no, únete a {nombre_canal} aquí:"
                 ),
                 reply_markup=InlineKeyboardMarkup(
                     [[InlineKeyboardButton(f"👑 Suscribirme a {nombre_canal}", callback_data=f"suscribirme_{canal_id}")]]
