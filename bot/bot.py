@@ -6,6 +6,7 @@ la misma fuente que usa la web. Editar ese archivo actualiza el bot en
 la próxima interacción, sin reiniciar el proceso.
 """
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -19,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 import mercadopago
 from dotenv import load_dotenv
+from mercadopago.errors.exceptions import MPServerError
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest, Conflict, TelegramError
 from telegram.helpers import escape_markdown
@@ -369,34 +371,54 @@ async def _crear_preapproval(
     telegram_user_id: int, email: str, canal_cfg: dict, context: ContextTypes.DEFAULT_TYPE
 ) -> str | None:
     """Crea la preapproval en MercadoPago para el canal indicado y devuelve el init_point, o None
-    si falló (ya logueado)."""
-    try:
-        # Sin preapproval_plan_id a propósito: esa variante exige card_token_id (tarjeta
-        # tokenizada de antemano, pensado para un checkout propio) y no genera un init_point
-        # para redirigir — la que sí lo genera es esta, "sin plan asociado" con status=pending,
-        # confirmado contra la documentación oficial tras un 400 real (card_token_id is required).
-        resultado = context.bot_data["mp_sdk"].preapproval().create({
-            "reason": f"Suscripción {canal_cfg.get('nombre_corto', canal_cfg['nombre'])} — Descuentos Bigolito",
-            # el email va acá además de en payer_email porque preapproval.get("payer_email") nunca
-            # viene poblado en la respuesta real de la API de MercadoPago (ver
-            # pagos/logica.py::aplicar_estado_preapproval) — es la única forma de que el webhook,
-            # que corre en otro proceso/servicio, recupere el email que el usuario escribió acá.
-            "external_reference": f"{telegram_user_id}:{canal_cfg['canal_id']}:{email}",
-            "payer_email": email,
-            "auto_recurring": {
-                "frequency": canal_cfg["frecuencia"],
-                "frequency_type": canal_cfg["frecuencia_tipo"],
-                "transaction_amount": canal_cfg["monto"],
-                "currency_id": "CLP",
-            },
-            "back_url": BACK_URL_MERCADOPAGO,
-            "status": "pending",
-        })
-        resultado.raise_for_status()
-    except Exception:
-        log.exception("Falló la creación de preapproval para %s", telegram_user_id)
-        return None
-    return resultado["response"]["init_point"]
+    si falló (ya logueado).
+
+    Reintenta hasta 3 veces con una pausa corta si MercadoPago devuelve un error de servidor
+    (MPServerError, 5xx) — confirmado en vivo que esos errores son intermitentes (el mismo
+    request suele funcionar en el segundo o tercer intento), y cada reintento le ahorra al
+    usuario tener que tocar "Reintentar" a mano. Cualquier otra excepción (datos inválidos, etc.)
+    no se reintenta, igual que antes."""
+    # Sin preapproval_plan_id a propósito: esa variante exige card_token_id (tarjeta
+    # tokenizada de antemano, pensado para un checkout propio) y no genera un init_point
+    # para redirigir — la que sí lo genera es esta, "sin plan asociado" con status=pending,
+    # confirmado contra la documentación oficial tras un 400 real (card_token_id is required).
+    payload = {
+        "reason": f"Suscripción {canal_cfg.get('nombre_corto', canal_cfg['nombre'])} — Descuentos Bigolito",
+        # el email va acá además de en payer_email porque preapproval.get("payer_email") nunca
+        # viene poblado en la respuesta real de la API de MercadoPago (ver
+        # pagos/logica.py::aplicar_estado_preapproval) — es la única forma de que el webhook,
+        # que corre en otro proceso/servicio, recupere el email que el usuario escribió acá.
+        "external_reference": f"{telegram_user_id}:{canal_cfg['canal_id']}:{email}",
+        "payer_email": email,
+        "auto_recurring": {
+            "frequency": canal_cfg["frecuencia"],
+            "frequency_type": canal_cfg["frecuencia_tipo"],
+            "transaction_amount": canal_cfg["monto"],
+            "currency_id": "CLP",
+        },
+        "back_url": BACK_URL_MERCADOPAGO,
+        "status": "pending",
+    }
+    intentos = 3
+    for intento in range(1, intentos + 1):
+        try:
+            resultado = context.bot_data["mp_sdk"].preapproval().create(payload)
+            resultado.raise_for_status()
+        except MPServerError:
+            if intento < intentos:
+                log.warning(
+                    "MercadoPago devolvió error de servidor creando preapproval para %s "
+                    "(intento %s/%s), reintentando...", telegram_user_id, intento, intentos,
+                )
+                await asyncio.sleep(2)
+                continue
+            log.exception("Falló la creación de preapproval para %s tras %s intentos", telegram_user_id, intentos)
+            return None
+        except Exception:
+            log.exception("Falló la creación de preapproval para %s", telegram_user_id)
+            return None
+        return resultado["response"]["init_point"]
+    return None
 
 
 def _firmar_link_tarjeta(
@@ -533,6 +555,10 @@ async def cb_confirmar_email_vip(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     telegram_user_id = update.effective_user.id
+    # Sin botones mientras se procesa: la creación de la preapproval puede tardar unos segundos
+    # (ver reintentos en _crear_preapproval), y sin esto el botón "Sí, confirmar" queda visible y
+    # clickeable durante la espera.
+    await _mostrar(update, context, "⏳ Generando tu link de pago...", None)
     await db.actualizar_email(context.bot_data["db_pool"], telegram_user_id, canal_id, email)
     await _avisar_pago_pendiente_vencido(context)
     await _cancelar_preapprovals_anteriores(telegram_user_id, canal_id, email, context)
