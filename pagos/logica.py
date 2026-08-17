@@ -40,14 +40,17 @@ def _periodo_de(auto_recurring: dict) -> timedelta:
     return timedelta(days=frecuencia)
 
 
-def _parse_external_reference(external_reference: str | None) -> tuple[int, str, str | None] | None:
+def parse_external_reference(external_reference: str | None) -> tuple[int, str, str | None] | None:
     """external_reference = "{telegram_user_id}:{canal_id}:{email}" (armado en
     bot/bot.py::_crear_preapproval). El email viaja acá — no en el campo payer_email de la
     preapproval, que la API real de MercadoPago nunca devuelve poblado (ver
     aplicar_estado_preapproval) — porque es la única forma de que este proceso, separado del bot,
     recupere el email que el usuario escribió en el chat. maxsplit=2 conserva cualquier ":" que el
     email tuviera (raro, pero válido) en vez de cortarlo. None si no tiene el formato esperado, o
-    si es una preapproval vieja sin el tercer campo (external_reference solo tenía 2 partes)."""
+    si es una preapproval vieja sin el tercer campo (external_reference solo tenía 2 partes).
+
+    Pública: la usan tanto aplicar_estado_preapproval acá abajo como
+    pagos/reconciliacion.py::_descubrir_preapprovals_perdidas."""
     if not external_reference or ":" not in external_reference:
         return None
     partes = external_reference.split(":", 2)
@@ -93,7 +96,7 @@ async def aplicar_estado_preapproval(pool: asyncpg.Pool, preapproval: dict) -> N
         )
         return
 
-    referencia = _parse_external_reference(preapproval.get("external_reference"))
+    referencia = parse_external_reference(preapproval.get("external_reference"))
     if referencia is None:
         log.warning(
             "Preapproval %s con external_reference inesperado: %r — se ignora.",
@@ -112,7 +115,7 @@ async def aplicar_estado_preapproval(pool: asyncpg.Pool, preapproval: dict) -> N
     # preapproval.get("payer_email"): confirmado contra la documentación oficial de MercadoPago
     # que esto siempre viene None — el recurso de preapproval solo trae "payer_id" (un ID interno
     # numérico), nunca el email. El email real viaja en el external_reference (ver
-    # _parse_external_reference); se sigue pasando payer_email como fallback por si algún día la
+    # parse_external_reference); se sigue pasando payer_email como fallback por si algún día la
     # API empieza a devolverlo, protegido por el COALESCE de db.upsert_suscripcion.
     es_nueva_activacion = await db.upsert_suscripcion(
         pool, telegram_user_id, canal_id, preapproval["id"], estado,

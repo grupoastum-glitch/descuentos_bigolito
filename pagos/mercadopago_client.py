@@ -51,6 +51,14 @@ def obtener_preapproval(preapproval_id: str) -> dict:
     return resultado["response"]
 
 
+def buscar_todas_preapprovals() -> list[dict]:
+    """GET /preapproval/search sin filtros, paginando con el iterador que ya trae el SDK
+    (mercadopago.pagination.iterator.search_auto_paging_iter) — todas las preapprovals de la
+    cuenta vendedora, usado por pagos/reconciliacion.py para detectar webhooks perdidos (ver su
+    docstring)."""
+    return list(_sdk.preapproval().search_auto_paging_iter())
+
+
 def obtener_invoice(invoice_id: str) -> dict:
     """GET /authorized_payments/{id} — un invoice representa un cobro individual de un ciclo de
     la suscripción (lo que dispara el webhook de topic 'subscription_authorized_payment'). Fuente:
@@ -67,7 +75,7 @@ def crear_preapproval_con_tarjeta(
     Bricks) — alternativa a bot/bot.py::_crear_preapproval para pagadores sin cuenta de
     MercadoPago, llamada desde pagos/pagos_tarjeta.py. Mismo external_reference/auto_recurring/
     payer_email/reason/back_url que el flujo redirigido (para que pagos/logica.py::
-    _parse_external_reference lo entienda sin cambios), sumando card_token_id y cambiando
+    parse_external_reference lo entienda sin cambios), sumando card_token_id y cambiando
     status:pending por status:authorized. back_url sigue siendo obligatorio para la API aunque acá
     nunca se use para redirigir (confirmado en vivo: 400 "back_url is required" sin él).
 

@@ -158,6 +158,19 @@ async def listar_activas(pool: asyncpg.Pool) -> list[dict]:
     return [dict(f) for f in filas]
 
 
+async def listar_pares_registrados(pool: asyncpg.Pool) -> dict[tuple[int, str], dict]:
+    """Todas las filas de suscripciones indexadas por (telegram_user_id, canal_id) — usado por
+    pagos/reconciliacion.py para el descubrimiento de preapprovals perdidas (clientes nuevos y
+    resuscripciones, ver _descubrir_preapprovals_perdidas). Se trae estado y
+    mercadopago_preapproval_id de cada par para que el caller decida si una preapproval
+    'authorized' de MercadoPago representa algo que ya sabíamos o algo que se perdió."""
+    async with pool.acquire() as con:
+        filas = await con.fetch(
+            "SELECT telegram_user_id, canal_id, estado, mercadopago_preapproval_id FROM suscripciones",
+        )
+    return {(f["telegram_user_id"], f["canal_id"]): dict(f) for f in filas}
+
+
 async def obtener_username(pool: asyncpg.Pool, telegram_user_id: int) -> str | None:
     """Username capturado por bot/db.py::actualizar_username en la última interacción de esta
     persona con el bot, o None si nunca interactuó (o no tiene username configurado)."""
