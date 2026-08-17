@@ -33,13 +33,20 @@ async def _descubrir_preapprovals_perdidas(pool) -> None:
        `suscripciones`. La fase de arriba (listar_activas) no lo detecta porque solo reconfirma
        filas que ya existen.
     2. Resuscripción perdida: el par ya existe pero con estado != 'activa' (canceló/venció antes)
-       y hay una preapproval 'authorized' más nueva para ese mismo par en MercadoPago — la
-       resuscripción real, cuyo webhook nunca llegó.
+       y hay una preapproval 'authorized' **distinta** (id nuevo) para ese mismo par en
+       MercadoPago — la resuscripción real, cuyo webhook nunca llegó.
 
     En ambos casos se aplica igual que un webhook normal. Deliberadamente NUNCA se toca un par
     cuyo estado local YA es 'activa' — esos quedan exclusivamente a cargo de la fase de arriba,
     que reconfirma cada uno contra su preapproval_id exacto; así es estructuralmente imposible
     que este descubrimiento pise una suscripción vigente con una preapproval vieja o equivocada.
+
+    Tampoco se toca un par cuyo estado local no es 'activa' si la preapproval 'authorized'
+    encontrada es la MISMA que ya teníamos guardada (mismo id): eso no es una resuscripción, es la
+    preapproval original todavía reintentando cobrar en segundo plano tras un pago fallido
+    (MercadoPago puede tardar varios días en cancelarla de verdad, ver
+    PENDIENTE_produccion_mercadopago.md) — rescatarla reactivaría a alguien que en realidad no
+    pagó nada nuevo (bug reproducido en vivo con una preapproval de prueba).
 
     Se llama después de esa fase a propósito: si una fila local 'activa' estaba desactualizada
     (ej. su preapproval real ya fue cancelada en MercadoPago porque el usuario se resuscribió y
@@ -60,10 +67,15 @@ async def _descubrir_preapprovals_perdidas(pool) -> None:
                 continue
             telegram_user_id, canal_id, _email = referencia
             fila = registrados.get((telegram_user_id, canal_id))
-            if fila is None or fila["estado"] != "activa":
-                # None → cliente nuevo para este canal. estado != 'activa' → posible resuscripción
-                # (o la misma preapproval cambió de estado y no nos enteramos); aplicar_estado_preapproval
-                # hace el upsert correcto en cualquiera de los dos casos.
+            es_resuscripcion = (
+                fila is not None
+                and fila["estado"] != "activa"
+                and fila["mercadopago_preapproval_id"] != p.get("id")
+            )
+            if fila is None or es_resuscripcion:
+                # None → cliente nuevo para este canal. es_resuscripcion → preapproval nueva de
+                # verdad para un par que no estaba activo; aplicar_estado_preapproval hace el
+                # upsert correcto en cualquiera de los dos casos.
                 pendientes.append(p)
     except Exception:
         log.exception("Falló preparar el descubrimiento de preapprovals perdidas.")
