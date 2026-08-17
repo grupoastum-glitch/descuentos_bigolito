@@ -37,6 +37,31 @@ ALTER TABLE suscripciones ADD COLUMN IF NOT EXISTS ultimo_invoice_id TEXT;
 -- último email de MercadoPago que funcionó para esta persona en este canal — permite no volver a
 -- pedirlo en una renovación futura (ver bot/db.py::obtener_email).
 ALTER TABLE suscripciones ADD COLUMN IF NOT EXISTS payer_email TEXT;
+
+-- username de Telegram de cada usuario que interactuó con el bot alguna vez (ver
+-- bot/db.py::actualizar_username, que la actualiza en cada update). Separada de suscripciones
+-- porque no todo el mundo que escribe al bot llega a pagar, y el username puede cambiar con el
+-- tiempo independientemente del estado de una suscripción puntual.
+CREATE TABLE IF NOT EXISTS telegram_usuarios (
+    telegram_user_id  BIGINT PRIMARY KEY,
+    username          TEXT,
+    actualizado_en    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- una fila por cada pago confirmado (alta o renovación) — a diferencia de suscripciones (que se
+-- pisa in-place), esto es el historial que va a alimentar el futuro comando de métricas de
+-- ventas. Se llena desde pagos/logica.py junto con el aviso al canal admin (ver
+-- pagos/telegram_client.py::avisar_pago).
+CREATE TABLE IF NOT EXISTS pagos_historial (
+    id                BIGSERIAL PRIMARY KEY,
+    telegram_user_id  BIGINT NOT NULL,
+    canal_id          TEXT NOT NULL,
+    tipo              TEXT NOT NULL,
+    monto             INTEGER,
+    payer_email       TEXT,
+    creado_en         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_pagos_historial_creado_en ON pagos_historial (creado_en);
 """
 
 _pool: asyncpg.Pool | None = None
@@ -133,13 +158,44 @@ async def listar_activas(pool: asyncpg.Pool) -> list[dict]:
     return [dict(f) for f in filas]
 
 
+async def obtener_username(pool: asyncpg.Pool, telegram_user_id: int) -> str | None:
+    """Username capturado por bot/db.py::actualizar_username en la última interacción de esta
+    persona con el bot, o None si nunca interactuó (o no tiene username configurado)."""
+    async with pool.acquire() as con:
+        fila = await con.fetchrow(
+            "SELECT username FROM telegram_usuarios WHERE telegram_user_id = $1",
+            telegram_user_id,
+        )
+    return fila["username"] if fila else None
+
+
+async def registrar_pago_historial(
+    pool: asyncpg.Pool,
+    telegram_user_id: int,
+    canal_id: str,
+    tipo: str,
+    monto: int | None,
+    payer_email: str | None,
+) -> None:
+    """Inserta una fila nueva por cada pago confirmado (alta o renovación) — a diferencia de
+    upsert_suscripcion, nunca pisa una fila existente: es el historial crudo para el futuro
+    comando de métricas de ventas."""
+    async with pool.acquire() as con:
+        await con.execute(
+            """INSERT INTO pagos_historial (telegram_user_id, canal_id, tipo, monto, payer_email)
+               VALUES ($1, $2, $3, $4, $5)""",
+            telegram_user_id, canal_id, tipo, monto, payer_email,
+        )
+
+
 async def buscar_por_preapproval_id(pool: asyncpg.Pool, mercadopago_preapproval_id: str) -> dict | None:
     """Usado al procesar un webhook de cobro recurrente (invoice): el invoice trae el
     preapproval_id, no el telegram_user_id/canal_id directamente. Incluye `estado` para que el
-    caller detecte una recuperación (ej. de 'vencida' tras un reintento de cobro exitoso)."""
+    caller detecte una recuperación (ej. de 'vencida' tras un reintento de cobro exitoso).
+    Incluye `payer_email` para poder avisar/registrar el pago sin una consulta aparte."""
     async with pool.acquire() as con:
         fila = await con.fetchrow(
-            """SELECT telegram_user_id, canal_id, estado, acceso_hasta, ultimo_invoice_id
+            """SELECT telegram_user_id, canal_id, estado, acceso_hasta, ultimo_invoice_id, payer_email
                FROM suscripciones WHERE mercadopago_preapproval_id = $1""",
             mercadopago_preapproval_id,
         )

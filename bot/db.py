@@ -3,7 +3,7 @@ resto de las operaciones) — usado únicamente para aprobar o rechazar solicitu
 VIP en bot.py::cb_solicitud_union, comparando la identidad de quien pide entrar contra el estado
 real de su suscripción.
 
-Única excepción a "solo lectura": actualizar_email() — ver su docstring."""
+Excepciones a "solo lectura": actualizar_email() y actualizar_username() — ver sus docstrings."""
 from __future__ import annotations
 
 import logging
@@ -79,4 +79,20 @@ async def actualizar_email(pool: asyncpg.Pool, telegram_user_id: int, canal_id: 
         await con.execute(
             "UPDATE suscripciones SET payer_email = $3 WHERE telegram_user_id = $1 AND canal_id = $2",
             telegram_user_id, canal_id, email,
+        )
+
+
+async def actualizar_username(pool: asyncpg.Pool, telegram_user_id: int, username: str | None) -> None:
+    """Guarda/actualiza el username de Telegram de quien acaba de interactuar con el bot, en la
+    tabla telegram_usuarios (esquema bootstrapeado por pagos/db.py). Se llama en cada update
+    recibido (ver bot.py::capturar_usuario) para que pagos/logica.py pueda mostrarlo en el aviso
+    de venta al canal admin sin tener que pedirlo en vivo a la API de Telegram al momento del
+    pago (que podría fallar si el usuario nunca inició conversación con el bot)."""
+    async with pool.acquire() as con:
+        await con.execute(
+            """INSERT INTO telegram_usuarios (telegram_user_id, username, actualizado_en)
+               VALUES ($1, $2, now())
+               ON CONFLICT (telegram_user_id) DO UPDATE SET
+                   username = EXCLUDED.username, actualizado_en = EXCLUDED.actualizado_en""",
+            telegram_user_id, username,
         )

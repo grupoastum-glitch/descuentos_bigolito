@@ -76,6 +76,40 @@ async def invitar(telegram_user_id: int, canal_id: str) -> None:
             )
 
 
+async def avisar_pago(
+    telegram_user_id: int,
+    username: str | None,
+    canal_id: str,
+    tipo: str,
+    monto: int | None,
+    email: str | None,
+) -> None:
+    """Avisa al canal privado admin-only (config.TELEGRAM_ADMIN_CHAT_ID_PAGOS) que se confirmó un
+    pago — alta nueva o renovación (`tipo`) — para control interno de ventas. Si el canal no está
+    configurado, solo loguea: nunca debe romper el flujo de pago real que la llama (ver
+    pagos/logica.py, que además envuelve esta llamada en su propio try/except)."""
+    if not config.TELEGRAM_ADMIN_CHAT_ID_PAGOS:
+        log.warning("TELEGRAM_ADMIN_CHAT_ID_PAGOS no configurado, no se puede avisar el pago de %s", telegram_user_id)
+        return
+
+    emoji = "🆕" if tipo == "alta" else "🔁"
+    monto_texto = f"${monto:,}".replace(",", ".") if monto is not None else "monto desconocido"
+    texto = (
+        f"{emoji} {'Alta nueva' if tipo == 'alta' else 'Renovación'} — {canal_id}\n"
+        f"ID: {telegram_user_id}\n"
+        f"Username: {'@' + username if username else 'sin username'}\n"
+        f"Email: {email or 'desconocido'}\n"
+        f"Monto: {monto_texto}"
+    )
+
+    bot = Bot(token=config.TELEGRAM_BOT_TOKEN)
+    async with bot:
+        try:
+            await bot.send_message(chat_id=config.TELEGRAM_ADMIN_CHAT_ID_PAGOS, text=texto)
+        except TelegramError:
+            log.exception("Falló el aviso de pago al canal admin para %s", telegram_user_id)
+
+
 async def expulsar(telegram_user_id: int, canal_id: str) -> None:
     """Saca al usuario de cada chat que el canal pago desbloquea (ver config.CANAL_CHAT_ID) — ban
     seguido de unban inmediato por chat (equivalente a un "kick": lo saca ahora, pero no le

@@ -9,11 +9,13 @@ COPY pagos/requirements.txt pagos/requirements.txt
 RUN pip install --no-cache-dir -r pagos/requirements.txt
 
 COPY pagos/config.py pagos/config.py
+COPY pagos/config_canales.py pagos/config_canales.py
 COPY pagos/db.py pagos/db.py
 COPY pagos/logica.py pagos/logica.py
 COPY pagos/mercadopago_client.py pagos/mercadopago_client.py
 COPY pagos/telegram_client.py pagos/telegram_client.py
 COPY pagos/reconciliacion.py pagos/reconciliacion.py
+COPY web/data/ web/data/
 
 WORKDIR /app/pagos
 CMD ["python", "reconciliacion.py"]

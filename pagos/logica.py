@@ -10,6 +10,7 @@ from datetime import timedelta
 import asyncpg
 
 import config
+import config_canales
 import db
 import mercadopago_client
 import telegram_client
@@ -54,6 +55,30 @@ def _parse_external_reference(external_reference: str | None) -> tuple[int, str,
         return None
     email = partes[2] if len(partes) == 3 else None
     return int(partes[0]), partes[1], email
+
+
+async def _registrar_y_avisar_venta(
+    pool: asyncpg.Pool, telegram_user_id: int, canal_id: str, tipo: str, email: str | None,
+) -> None:
+    """Registra un pago confirmado (alta o renovación) en pagos_historial y avisa al canal admin
+    de control interno. Se llama SIEMPRE después de que el usuario ya tiene su acceso (ver
+    llamadores) y envuelta en try/except acá mismo a propósito: pagos/webhook.py deja que
+    cualquier excepción no atrapada llegue a un 500 para que MercadoPago reintente el webhook
+    entero (comportamiento correcto ante errores transitorios reales) — pero un fallo en esto
+    (guardar el historial o avisar al admin) no debe disparar ese reintento, porque el acceso ya
+    quedó dado y el reintento no lo repetiría igual (es_nueva_activacion/ultimo_invoice_id ya
+    quedaron marcados), solo generaría ruido. En el peor caso se pierde un aviso puntual, nunca el
+    acceso del que pagó."""
+    try:
+        monto = config_canales.canales_pagos().get(canal_id, {}).get("monto")
+        username = await db.obtener_username(pool, telegram_user_id)
+        await db.registrar_pago_historial(pool, telegram_user_id, canal_id, tipo, monto, email)
+        await telegram_client.avisar_pago(telegram_user_id, username, canal_id, tipo, monto, email)
+    except Exception:
+        log.exception(
+            "Falló registrar/avisar la venta (%s) de %s en %s — el acceso ya fue otorgado, no se reintenta.",
+            tipo, telegram_user_id, canal_id,
+        )
 
 
 async def aplicar_estado_preapproval(pool: asyncpg.Pool, preapproval: dict) -> None:
@@ -102,6 +127,7 @@ async def aplicar_estado_preapproval(pool: asyncpg.Pool, preapproval: dict) -> N
             # que sumarlo acá también contaría el mismo pago dos veces.
             await db.extender_acceso(pool, telegram_user_id, canal_id, timedelta(0))
             await telegram_client.invitar(telegram_user_id, canal_id)
+            await _registrar_y_avisar_venta(pool, telegram_user_id, canal_id, "alta", email)
     # Ya no se expulsa acá al pausar/cancelar — el usuario conserva el acceso hasta que vence
     # acceso_hasta (el período que ya pagó). La expulsión real la hace pagos/reconciliacion.py
     # cuando ese plazo pasa. Ver PLAN_periodo_gracia_cancelacion.md.
@@ -161,4 +187,7 @@ async def aplicar_pago_recurrente(pool: asyncpg.Pool, invoice: dict) -> None:
     log.info(
         "Acceso extendido para %s en canal %s (invoice %s, preapproval %s).",
         fila["telegram_user_id"], fila["canal_id"], invoice_id, preapproval_id,
+    )
+    await _registrar_y_avisar_venta(
+        pool, fila["telegram_user_id"], fila["canal_id"], "renovacion", fila.get("payer_email"),
     )

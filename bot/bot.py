@@ -29,6 +29,7 @@ from telegram.ext import (
     CommandHandler,
     ContextTypes,
     MessageHandler,
+    TypeHandler,
     filters,
 )
 
@@ -184,6 +185,23 @@ async def _mostrar(
             pass
     nuevo = await context.bot.send_message(chat_id=chat_id, text=texto, parse_mode="Markdown", reply_markup=teclado)
     context.user_data["menu_msg_id"] = nuevo.message_id
+
+
+async def capturar_usuario(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Guarda el username de quien mande cualquier update (comando, callback, solicitud de unión,
+    etc.) en telegram_usuarios — captura pasiva para que pagos/logica.py lo tenga a mano al avisar
+    una venta, sin pedirlo en vivo a la API en el momento del pago. group=-1 en el registro (ver
+    main()) para que corra antes que el resto sin depender de qué handler específico matchea.
+    Nunca debe interrumpir el procesamiento normal del update: cualquier falla queda solo
+    logueada."""
+    if update.effective_user is None:
+        return
+    try:
+        await db.actualizar_username(
+            context.bot_data["db_pool"], update.effective_user.id, update.effective_user.username,
+        )
+    except Exception:
+        log.exception("No se pudo actualizar el username de %s", update.effective_user.id)
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -688,6 +706,7 @@ def main() -> None:
     app.bot_data["mp_sdk"] = mercadopago.SDK(mp_access_token)
     app.bot_data["link_pago_secret"] = link_pago_secret
 
+    app.add_handler(TypeHandler(Update, capturar_usuario), group=-1)
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(cb_suscribirme, pattern="^suscribirme_"))
     app.add_handler(CallbackQueryHandler(cb_confirmar_email_vip, pattern="^confirmar_email_vip$"))

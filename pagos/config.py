@@ -12,6 +12,11 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 # --- Telegram (mismo bot que bot/bot.py y scraper/telegram_publisher.py) ---
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
+# canal privado admin-only ("Subs Bigolito💰") donde se avisa cada alta/renovación confirmada —
+# distinto del TELEGRAM_ADMIN_CHAT_ID de scraper/ (ese es para alertas operativas de scraping, no
+# de ventas). Si no está seteado, avisar_pago() solo loguea y sigue.
+TELEGRAM_ADMIN_CHAT_ID_PAGOS = os.environ.get("TELEGRAM_ADMIN_CHAT_ID_PAGOS", "")
+
 # --- MercadoPago ---
 MERCADOPAGO_ACCESS_TOKEN = os.environ.get("MERCADOPAGO_ACCESS_TOKEN", "")
 # secreto de firma que genera MercadoPago al configurar la URL de notificación — valida que cada
