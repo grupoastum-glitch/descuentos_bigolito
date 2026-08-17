@@ -65,6 +65,7 @@ def _ahora_iso() -> str:
 class StatsHistorial:
     precio_minimo: int
     fecha_precio_minimo: str
+    id_precio_minimo: int
     descuento_max: int
 
 
@@ -73,6 +74,7 @@ def _stats_historial(historial: list[dict]) -> StatsHistorial:
     return StatsHistorial(
         precio_minimo=minimo["precio"],
         fecha_precio_minimo=minimo["fecha"],
+        id_precio_minimo=minimo["id"],
         descuento_max=max(e["descuento_pct"] for e in historial),
     )
 
@@ -82,6 +84,9 @@ class DecisionPublicacion:
     regla: str | None = None  # None | "regla_1" | "regla_2" | "regla_3"
     precio_minimo_anterior: int | None = None
     fecha_precio_minimo_anterior: str | None = None
+    # Solo relevante para regla_3: True si la última fila de historial puede reusarse (UPDATE de
+    # su fecha) en vez de insertar una fila nueva — ver _evaluar_reglas.
+    puede_reusar_fila: bool = False
 
 
 def _horas_entre(fecha_iso_desde: str, fecha_iso_hasta: str) -> float:
@@ -110,12 +115,19 @@ def _evaluar_reglas(historial: list[dict], precio_actual: int, descuento_pct: in
 
     sigue_siendo_record = es_minimo_historico or es_descuento_max
     if sigue_siendo_record and _horas_entre(ultimo["fecha"], ahora) >= config.HORAS_REPUBLICACION_REGLA3:
+        # "ultimo" solo puede ser la fila de origen del mínimo histórico cuando es_minimo_historico
+        # es True (si no, su precio es estrictamente mayor a stats.precio_minimo). Reusar esa fila
+        # perdería la fecha real del récord (se usa en el caption de Regla 2/3 como
+        # fecha_precio_minimo_anterior); de la 2da repetición en adelante ya es una fila duplicada
+        # distinta de la de origen y se puede reusar sin perder nada.
+        puede_reusar_fila = ultimo["id"] != stats.id_precio_minimo
         if es_minimo_historico:
-            return DecisionPublicacion(regla="regla_3")
+            return DecisionPublicacion(regla="regla_3", puede_reusar_fila=puede_reusar_fila)
         return DecisionPublicacion(
             regla="regla_3",
             precio_minimo_anterior=stats.precio_minimo,
             fecha_precio_minimo_anterior=stats.fecha_precio_minimo,
+            puede_reusar_fila=puede_reusar_fila,
         )
 
     return DecisionPublicacion()
@@ -202,6 +214,8 @@ async def procesar(pool: asyncpg.Pool, items_detectados: list[dict], tienda: con
                 "historial": historial + [evento_nuevo],
                 "canal": config.canal_para_oferta(tienda.id, registro["descuento_pct"]),
                 "comercio": tienda.nombre,
+                "ultimo_historial_id": historial[-1]["id"] if historial else None,
+                "puede_reusar_fila": decision.puede_reusar_fila,
             })
 
     await db.upsert_productos(pool, registros_a_upsertear)
@@ -259,6 +273,11 @@ async def registrar_evento_publicado(pool: asyncpg.Pool, oferta: dict) -> None:
     vez por cada oferta que Telegram confirma que se mandó de verdad. Inserta su evento de
     historial de inmediato (ver docstring del módulo: esto es lo que hace que la corrida no
     pierda progreso si se corta a mitad de camino)."""
-    await db.insertar_evento_historial(
-        pool, oferta["id"], oferta["precio_actual"], oferta["descuento_pct"], oferta["fecha"],
-    )
+    if oferta["puede_reusar_fila"] and oferta["ultimo_historial_id"] is not None:
+        await db.actualizar_fecha_evento_historial(
+            pool, oferta["ultimo_historial_id"], oferta["fecha"],
+        )
+    else:
+        await db.insertar_evento_historial(
+            pool, oferta["id"], oferta["precio_actual"], oferta["descuento_pct"], oferta["fecha"],
+        )

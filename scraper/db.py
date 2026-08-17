@@ -78,6 +78,7 @@ def _parse_iso(fecha_iso: str) -> datetime:
 
 def _fila_a_dict_historial(fila: asyncpg.Record) -> dict:
     return {
+        "id": fila["id"],
         "precio": fila["precio"],
         "descuento_pct": fila["descuento_pct"],
         "fecha": fila["fecha"].strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -96,8 +97,8 @@ async def cargar_productos_con_historial(pool: asyncpg.Pool, claves: list[str]) 
             "SELECT * FROM productos WHERE id = ANY($1::text[])", claves,
         )
         filas_historial = await con.fetch(
-            """SELECT producto_id, precio, descuento_pct, fecha FROM historial_precios
-               WHERE producto_id = ANY($1::text[]) ORDER BY producto_id, fecha""",
+            """SELECT id, producto_id, precio, descuento_pct, fecha FROM historial_precios
+               WHERE producto_id = ANY($1::text[]) ORDER BY producto_id, fecha, id""",
             claves,
         )
 
@@ -161,6 +162,19 @@ async def insertar_evento_historial(
         await con.execute(
             "INSERT INTO historial_precios (producto_id, precio, descuento_pct, fecha) VALUES ($1,$2,$3,$4)",
             producto_id, precio, descuento_pct, _parse_iso(fecha_iso),
+        )
+
+
+async def actualizar_fecha_evento_historial(pool: asyncpg.Pool, historial_id: int, fecha_iso: str) -> None:
+    """UPDATE en vez de INSERT — usado por registrar_evento_publicado cuando Regla 3 se cumple
+    pero precio/descuento no cambiaron desde la última fila guardada Y esa fila ya no es la que
+    sostiene el mínimo histórico (ver DecisionPublicacion.puede_reusar_fila en ofertas_writer.py).
+    Evita que historial_precios crezca sin límite con productos evergreen que se re-publican cada
+    HORAS_REPUBLICACION_REGLA3 para siempre."""
+    async with pool.acquire() as con:
+        await con.execute(
+            "UPDATE historial_precios SET fecha = $1 WHERE id = $2",
+            _parse_iso(fecha_iso), historial_id,
         )
 
 
