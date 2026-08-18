@@ -3,9 +3,16 @@
 Job que corre cada hora (Cron Schedule de Railway, no un proceso 24/7): scrapea la colección
 de ofertas de Falabella y los productos puntuales listados en
 [`productos_seguidos.json`](productos_seguidos.json), actualiza
-[`../web/data/ofertas.json`](../web/data/ofertas.json), postea en Telegram las ofertas nuevas,
-y pushea los cambios a `main` — eso dispara el redeploy automático de la web en Cloudflare
-Pages.
+[`../web/data/ofertas.json`](../web/data/ofertas.json), encola en Postgres las ofertas nuevas
+para publicar, y pushea los cambios a `main` — eso dispara el redeploy automático de la web en
+Cloudflare Pages.
+
+**Este job NO publica a Telegram directo.** Eso lo hace [`publicar.py`](publicar.py), un
+servicio separado que corre 24/7 (no cron, igual que `bot/bot.py`) y drena la cola de Postgres
+a su propio ritmo — ver "Desplegar el publicador" más abajo. Se separó así porque el volumen de
+ofertas por publicar en una corrida puede tardar horas en drenarse (Telegram limita a un mensaje
+cada `config.TELEGRAM_DELAY_SEGUNDOS` por canal), y ese tiempo no debe bloquear el advisory lock
+que necesita la próxima corrida horaria del scraper para arrancar (ver `run_lock.py`).
 
 ## Cómo funciona
 
@@ -20,12 +27,14 @@ Pages.
    clases CSS (que cambian con cada build) leyendo el JSON que el propio sitio ya embebe.
 4. Decide qué es "nuevo" por tienda contra el estado en Postgres (tabla `productos`, ver
    `scraper/db.py`), que guarda el historial de **todos** los productos vistos alguna vez, no
-   solo los activos. Cada publicación confirmada por Telegram se guarda ahí al toque (no al
-   final de toda la corrida) — así una corrida interrumpida a mitad de camino no reenvía lo que
-   ya se publicó de verdad.
+   solo los activos. Cada publicación confirmada por Telegram se guarda ahí al toque, pero eso
+   lo hace `publicar.py` (ver más abajo), no este job — así una corrida interrumpida a mitad de
+   camino, o una publicación que tarda horas en drenarse, no reenvía lo que ya se publicó de
+   verdad.
 5. Escribe `ofertas.json` combinando las ofertas activas de todas las tiendas por encima del
-   piso mínimo, y postea en Telegram solo las que son récord de precio/descuento nuevo (ver
-   `ofertas_writer.py`) — así una oferta que sigue vigente sin cambios no se re-postea cada hora.
+   piso mínimo, y encola en `cola_publicacion` (Postgres) solo las que son récord de
+   precio/descuento nuevo (ver `ofertas_writer.py`) — así una oferta que sigue vigente sin
+   cambios no se re-postea cada hora. `publicar.py` es quien las manda a Telegram de verdad.
 6. Commitea y pushea `ofertas.json` a `main` (el estado de cada tienda vive en Postgres, no en
    el repo).
 
@@ -84,3 +93,20 @@ job pesado que solo debe correr una vez por hora.
    servicio), `TELEGRAM_BOT_TOKEN`.
 5. **Watch Paths**: `scraper/**` — para que un push que solo toca `bot/`/`web/`/docs no dispare
    un redeploy de este servicio (y no corte una corrida activa).
+
+## Desplegar el publicador en Railway
+
+Servicio nuevo y separado (mismo proyecto de Railway, mismo repo) — corre 24/7, **sin Cron
+Schedule**, igual que `bot/bot.py`. Es el único proceso que lee `cola_publicacion` y manda
+mensajes a Telegram; el scraper de arriba solo escribe ahí.
+
+1. New Service → mismo repo de GitHub → **Root Directory vacío**.
+2. **Dockerfile Path**: `scraper/Dockerfile.publicar` (no instala Chromium — `publicar.py` no
+   scrapea nada).
+3. **Sin Cron Schedule** — Restart Policy por defecto (siempre corriendo).
+4. **Variables**: `DATABASE_URL` (mismo Postgres que el scraper), `TELEGRAM_BOT_TOKEN` (mismo
+   token). No necesita `GITHUB_TOKEN`/`GITHUB_REPO` — no toca git.
+5. **Watch Paths**: `scraper/**` — mismo motivo que el scraper.
+
+Revisar en el log al arrancar: `Publicador arrancado, drenando cola_publicacion cada 15s cuando
+está vacía.` — si no aparece, revisar `DATABASE_URL`/`TELEGRAM_BOT_TOKEN`.

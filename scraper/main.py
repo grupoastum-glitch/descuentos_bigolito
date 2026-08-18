@@ -5,9 +5,11 @@
    demás. Apenas cada una termina, se escribe su estado en Postgres (tabla `productos` — ver
    scraper/db.py), sin esperar a las demás tiendas — si la corrida se corta a mitad de camino,
    lo de las tiendas que ya terminaron no se pierde.
-3. Publica en Telegram las ofertas nuevas/con récord nuevo, de todas las tiendas juntas (mezcladas
-   al azar) — cada publicación confirmada se persiste al toque (ver
-   ofertas_writer.registrar_evento_publicado), no al final de toda la corrida.
+3. Encola en Postgres (tabla `cola_publicacion`, ver scraper/db.py) las ofertas nuevas/con récord
+   nuevo de todas las tiendas juntas (mezcladas al azar) — NO las publica acá. El envío real a
+   Telegram lo hace scraper/publicar.py, un proceso aparte que corre 24/7 (no cron), para que un
+   volumen grande de ofertas por publicar (limitado por el ritmo de Telegram, no por nosotros) no
+   bloquee el advisory lock de la próxima corrida horaria.
 4. Escribe el feed combinado web/data/ofertas.json y lo commitea/pushea — Cloudflare Pages
    redeploya la web al detectar el push.
 """
@@ -401,13 +403,10 @@ async def _correr() -> None:
         random.shuffle(resto)
         todas_candidatas = extremas + resto
 
-        async def _on_publicada(oferta: dict) -> None:
-            # se llama una vez por cada oferta que Telegram confirma que se mandó de verdad —
-            # persiste su evento de historial al toque, no al final de toda la corrida (ver
-            # docstring de ofertas_writer para el porqué).
-            await ofertas_writer.registrar_evento_publicado(pool, oferta)
-
-        await telegram_publisher.publicar_ofertas_nuevas(todas_candidatas, on_publicada=_on_publicada)
+        # ya no se publica acá directo (podía tardar horas con mucho volumen y, mientras tanto,
+        # bloqueaba el advisory lock para la próxima corrida horaria) — se encola en Postgres y
+        # scraper/publicar.py (proceso aparte, 24/7) es quien la drena a su propio ritmo.
+        await db.encolar_publicaciones(pool, todas_candidatas)
 
         await ofertas_writer.construir_feed_web(repo_dir, pool)
 

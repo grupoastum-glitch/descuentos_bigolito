@@ -7,6 +7,7 @@ el primer connect (ver conectar()) — no hace falta Alembic para esto.
 """
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 
@@ -49,6 +50,18 @@ CREATE TABLE IF NOT EXISTS historial_precios (
 
 CREATE INDEX IF NOT EXISTS ix_historial_producto_fecha
     ON historial_precios (producto_id, fecha);
+
+CREATE TABLE IF NOT EXISTS cola_publicacion (
+    id           BIGSERIAL PRIMARY KEY,
+    canal        TEXT NOT NULL,
+    prioridad    INTEGER NOT NULL DEFAULT 0,
+    oferta       JSONB NOT NULL,
+    creado_en    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    publicado_en TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS ix_cola_pendiente
+    ON cola_publicacion (canal, prioridad DESC, id) WHERE publicado_en IS NULL;
 """
 
 _pool: asyncpg.Pool | None = None
@@ -201,3 +214,62 @@ async def feed_activo(
         )
     filas = sorted([*gratis, *vip], key=lambda f: f["primera_deteccion"], reverse=True)
     return [dict(f) for f in filas]
+
+
+async def encolar_publicaciones(pool: asyncpg.Pool, ofertas: list[dict]) -> None:
+    """INSERT bulk en cola_publicacion — usado por main.py al final de una corrida, en vez de
+    publicar directo a Telegram (ver scraper/publicar.py, que es quien la drena). Ofertas sin
+    canal activo (config.canal_para_oferta devolvió None) se ignoran acá, mismo comportamiento
+    silencioso que tenía antes telegram_publisher.publicar_ofertas_nuevas: quedan disponibles
+    como candidatas en la próxima corrida sin quedar encoladas para nada."""
+    filas = [
+        (o["canal"], 1 if o["descuento_pct"] >= config.UMBRAL_DESCUENTO_EXTREMO else 0, json.dumps(o))
+        for o in ofertas if o.get("canal")
+    ]
+    if not filas:
+        return
+    async with pool.acquire() as con:
+        await con.executemany(
+            "INSERT INTO cola_publicacion (canal, prioridad, oferta) VALUES ($1,$2,$3)",
+            filas,
+        )
+
+
+async def cola_pendiente(pool: asyncpg.Pool) -> list[dict]:
+    """Trae todas las ofertas pendientes de publicar, con su _cola_id embebido (para que
+    publicar.py sepa qué fila marcar_publicada al confirmarse el envío) — orden por prioridad
+    (descuentos extremos primero) y luego por id (orden de inserción, ya viene mezclado al azar
+    desde main.py)."""
+    async with pool.acquire() as con:
+        filas = await con.fetch(
+            "SELECT id, oferta FROM cola_publicacion WHERE publicado_en IS NULL "
+            "ORDER BY prioridad DESC, id",
+        )
+    ofertas = []
+    for fila in filas:
+        oferta = json.loads(fila["oferta"])
+        oferta["_cola_id"] = fila["id"]
+        ofertas.append(oferta)
+    return ofertas
+
+
+async def marcar_publicada(pool: asyncpg.Pool, cola_id: int) -> None:
+    async with pool.acquire() as con:
+        await con.execute(
+            "UPDATE cola_publicacion SET publicado_en = now() WHERE id = $1", cola_id,
+        )
+
+
+async def limpiar_cola_publicada(pool: asyncpg.Pool, dias: int = 3) -> int:
+    """Borra filas ya publicadas con más de `dias` de antigüedad — una vez publicada, la fila no
+    aporta nada operativo (el evento real queda en historial_precios). Llamada periódicamente por
+    publicar.py, no por un cron/script aparte. Devuelve cuántas filas se borraron (solo para
+    logging)."""
+    async with pool.acquire() as con:
+        resultado = await con.execute(
+            "DELETE FROM cola_publicacion WHERE publicado_en IS NOT NULL "
+            "AND publicado_en < now() - ($1 || ' days')::interval",
+            str(dias),
+        )
+    # asyncpg devuelve algo como "DELETE 42"
+    return int(resultado.split()[-1])

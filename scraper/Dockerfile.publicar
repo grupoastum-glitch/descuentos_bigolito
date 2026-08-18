@@ -1,0 +1,13 @@
+FROM python:3.11-slim
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+COPY scraper/requirements.txt scraper/requirements.txt
+RUN pip install --no-cache-dir -r scraper/requirements.txt
+# A diferencia de scraper/Dockerfile, acá NO se instala Chromium (patchright) — publicar.py no
+# scrapea, solo lee scraper/db.py::cola_publicacion y manda mensajes por la Bot API de Telegram.
+# Instalar el browser acá solo pesaría la imagen y el build sin usarse nunca.
+COPY scraper/ scraper/
+
+WORKDIR /app/scraper
+CMD ["python", "publicar.py"]
