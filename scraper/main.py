@@ -37,11 +37,13 @@ import ofertas_writer  # noqa: E402
 import run_lock  # noqa: E402
 import telegram_publisher  # noqa: E402
 from fuentes.bestmart.listado import obtener_ofertas_bestmart  # noqa: E402
+from fuentes.dust2.listado import obtener_ofertas_dust2  # noqa: E402
 from fuentes.easy.listado import obtener_ofertas_easy  # noqa: E402
 from fuentes.falabella.listado import obtener_ofertas_listado  # noqa: E402
 from fuentes.falabella.producto import obtener_ofertas_productos_seguidos  # noqa: E402
 from fuentes.geekz.listado import obtener_ofertas_geekz  # noqa: E402
 from fuentes.luffytoys.listado import obtener_ofertas_luffytoys  # noqa: E402
+from fuentes.myshop.listado import obtener_ofertas_myshop  # noqa: E402
 from fuentes.paris.listado import obtener_ofertas_paris  # noqa: E402
 from fuentes.pcfactory.listado import obtener_ofertas_pcfactory  # noqa: E402
 from fuentes.ripley.listado import obtener_ofertas_ripley  # noqa: E402
@@ -302,6 +304,22 @@ async def _correr_pcfactory(sesion: FetcherSession, repo_dir: Path) -> tuple[lis
     return detectados, True
 
 
+async def _correr_dust2(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
+    detectados, paginas_ok = await obtener_ofertas_dust2(sesion)
+    if paginas_ok == 0:
+        log.error("Dust2.gg: se descarta esta corrida sin tocar su estado, no se leyó ninguna página.")
+        return [], False
+    return detectados, True
+
+
+async def _correr_myshop(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
+    detectados, fuentes_ok = await obtener_ofertas_myshop(sesion)
+    if fuentes_ok == 0:
+        log.error("MyShop: se descarta esta corrida sin tocar su estado, no se leyó ninguna categoría.")
+        return [], False
+    return detectados, True
+
+
 # id de config.Tienda -> función que corre esa tienda. Se resuelve acá (no en config.py) para
 # evitar un import circular: fuentes/* ya hace `import config`.
 _RUNNERS = {
@@ -317,6 +335,8 @@ _RUNNERS = {
     "bestmart": _correr_bestmart,
     "spdigital": _correr_spdigital,
     "pcfactory": _correr_pcfactory,
+    "dust2": _correr_dust2,
+    "myshop": _correr_myshop,
 }
 
 
