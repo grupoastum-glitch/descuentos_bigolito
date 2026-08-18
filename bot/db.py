@@ -29,12 +29,18 @@ async def conectar(database_url: str) -> asyncpg.Pool:
 
 
 async def esta_activo(pool: asyncpg.Pool, telegram_user_id: int, canal_id: str) -> bool:
+    """Vigente = mismo criterio que pagos/db.py::listar_vencidas: 'activa' cubre el caso normal,
+    pero 'cancelada'/'pausada' con acceso_hasta todavía en el futuro también cuentan como vigentes
+    — es el período de gracia de cancelación (ver COMPLETADO_periodo_gracia_cancelacion.md), que
+    deja al usuario con acceso hasta que vence lo ya pagado en vez de cortarlo al cancelar."""
     async with pool.acquire() as con:
         fila = await con.fetchrow(
-            "SELECT estado FROM suscripciones WHERE telegram_user_id = $1 AND canal_id = $2",
+            """SELECT 1 FROM suscripciones
+               WHERE telegram_user_id = $1 AND canal_id = $2
+                 AND estado IN ('activa', 'cancelada', 'pausada') AND acceso_hasta > now()""",
             telegram_user_id, canal_id,
         )
-    return fila is not None and fila["estado"] == "activa"
+    return fila is not None
 
 
 async def obtener_acceso_hasta(pool: asyncpg.Pool, telegram_user_id: int, canal_id: str):
@@ -49,10 +55,13 @@ async def obtener_acceso_hasta(pool: asyncpg.Pool, telegram_user_id: int, canal_
 
 
 async def canales_activos(pool: asyncpg.Pool, telegram_user_id: int) -> list[str]:
-    """canal_id de cada suscripción activa de este usuario, o [] si no tiene ninguna."""
+    """canal_id de cada suscripción vigente de este usuario (mismo criterio que esta_activo: incluye
+    el período de gracia de cancelación), o [] si no tiene ninguna."""
     async with pool.acquire() as con:
         filas = await con.fetch(
-            "SELECT canal_id FROM suscripciones WHERE telegram_user_id = $1 AND estado = 'activa'",
+            """SELECT canal_id FROM suscripciones
+               WHERE telegram_user_id = $1
+                 AND estado IN ('activa', 'cancelada', 'pausada') AND acceso_hasta > now()""",
             telegram_user_id,
         )
     return [f["canal_id"] for f in filas]
