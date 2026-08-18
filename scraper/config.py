@@ -80,13 +80,15 @@ UMBRAL_DESCUENTO_GEEK = 20  # mismo piso que DESCUENTO_MINIMO_WEB_PCT — decisi
 # — mismo mecanismo que TIENDAS_GEEK: postean exclusivas a
 # CANAL_TELEGRAM_USERNAME["ofertas_deco_hogar"] si superan UMBRAL_DESCUENTO_DECO_HOGAR.
 TIENDAS_DECO_HOGAR = {"easy", "sodimac"}
-UMBRAL_DESCUENTO_DECO_HOGAR = 20  # mismo piso que geek — decisión 2026-08-15
+UMBRAL_DESCUENTO_DECO_HOGAR = 25  # subido de 20 a 25 — decisión 2026-08-17, para mitigar el
+# volumen de candidatas por corrida (ver sesión de optimización de cron/publicación)
 
 # tiendas de la categoría "Tech" (tecnología/gaming, ver Tiendas/paginas.md) — mismo mecanismo
 # que TIENDAS_GEEK/TIENDAS_DECO_HOGAR: postean exclusivas a
 # CANAL_TELEGRAM_USERNAME["ofertas_tech"] si superan UMBRAL_DESCUENTO_TECH.
-TIENDAS_TECH = {"bestmart", "spdigital", "pcfactory"}
-UMBRAL_DESCUENTO_TECH = 20  # mismo piso que geek/deco hogar — decisión 2026-08-15
+TIENDAS_TECH = {"bestmart", "spdigital", "pcfactory", "xiaomi"}  # Xiaomi sumada 2026-08-17 —
+# antes posteaba a los tramos genéricos ofertas_40/ofertas_vip, ahora exclusiva a ofertas_tech
+UMBRAL_DESCUENTO_TECH = 25  # subido de 20 a 25 — decisión 2026-08-17, mismo motivo que deco hogar
 
 # cada cuántas horas se le da otra chance a un producto que sigue siendo récord (precio mínimo o
 # mayor descuento) pero no cambió desde la última vez que se publicó — evita que ofertas buenas
