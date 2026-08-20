@@ -29,8 +29,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("scraper.publicar")
 
 POLL_SEGUNDOS = 15  # espera entre chequeos de la cola cuando está vacía
-LIMPIEZA_INTERVALO_HORAS = 24  # cada cuánto se corre db.limpiar_cola_publicada
-LIMPIEZA_RETENCION_DIAS = 3  # filas ya publicadas más viejas que esto se borran
+LIMPIEZA_INTERVALO_HORAS = 6  # cada cuánto se corre db.limpiar_cola_publicada — antes 24h,
+# bajado junto con la retención (ver LIMPIEZA_RETENCION_DIAS) para que la retención real se
+# acerque a 24h y no a 24h+24h (sesión 2026-08-20, cola_publicacion llegó a 115MB/106k filas)
+LIMPIEZA_RETENCION_DIAS = 1  # filas ya publicadas más viejas que esto se borran — antes 3
 
 
 async def _drenar_una_vez(pool) -> bool:

@@ -41,6 +41,12 @@ from fuentes.falabella.parsing import calcular_descuento_pct  # noqa: F401 (reex
 
 log = logging.getLogger("scraper.ofertas_writer")
 
+_HISTORIAL_MAX_EN_OFERTA = 5  # tope de eventos de historial que se guardan en la oferta que va a
+# cola_publicacion — el caption de Telegram solo muestra los últimos 3
+# (telegram_publisher.MAX_EVENTOS_HISTORIAL_EN_CAPTION), guardar el historial completo del
+# producto ahí era peso muerto que infló cola_publicacion a 115MB (sesión 2026-08-20). No afecta
+# a historial_precios (la tabla real/permanente, sigue completa) — solo esta copia transitoria.
+
 
 def afiliar_url(url: str, comercio: str) -> str:
     """Envuelve `url` con el deeplink de afiliado de Soicos configurado para `comercio` en
@@ -155,6 +161,7 @@ async def procesar(pool: asyncpg.Pool, items_detectados: list[dict], tienda: con
 
     ofertas_para_publicar = []
     registros_a_upsertear = []
+    regla3_admitidas = 0  # ver config.MAX_REGLA3_POR_TIENDA_POR_CORRIDA más abajo
 
     for producto_id, item in por_id.items():
         clave = _id_estable(tienda.id, producto_id)
@@ -171,6 +178,16 @@ async def procesar(pool: asyncpg.Pool, items_detectados: list[dict], tienda: con
             decision = DecisionPublicacion(regla="regla_1")
 
         es_candidata = decision.regla is not None
+        if decision.regla == "regla_3":
+            # techo por tienda por corrida — sin esto, el pool de productos "récord eterno"
+            # crece sin límite a medida que se trackean más productos (ver
+            # config.MAX_REGLA3_POR_TIENDA_POR_CORRIDA). Regla 1/2 (récords genuinos) nunca se
+            # cortan acá. Lo descartado no se pierde: sigue siendo récord y vuelve a evaluarse
+            # en la próxima corrida, mismo mecanismo que una candidata sin canal activo.
+            if regla3_admitidas >= config.MAX_REGLA3_POR_TIENDA_POR_CORRIDA:
+                es_candidata = False
+            else:
+                regla3_admitidas += 1
 
         # el evento de esta corrida NO se persiste todavía (ver docstring del módulo) — solo se
         # arma en memoria para mostrarlo en el caption si es_candidata, y se guarda si/cuando
@@ -211,7 +228,7 @@ async def procesar(pool: asyncpg.Pool, items_detectados: list[dict], tienda: con
                 "regla": decision.regla,
                 "precio_minimo_anterior": decision.precio_minimo_anterior,
                 "fecha_precio_minimo_anterior": decision.fecha_precio_minimo_anterior,
-                "historial": historial + [evento_nuevo],
+                "historial": (historial + [evento_nuevo])[-_HISTORIAL_MAX_EN_OFERTA:],
                 "canal": config.canal_para_oferta(tienda.id, registro["descuento_pct"]),
                 "comercio": tienda.nombre,
                 "ultimo_historial_id": historial[-1]["id"] if historial else None,

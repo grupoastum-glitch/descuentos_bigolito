@@ -97,6 +97,16 @@ UMBRAL_DESCUENTO_TECH = 25  # subido de 20 a 25 — decisión 2026-08-17, mismo 
 # de este tamaño que pase.
 HORAS_REPUBLICACION_REGLA3 = 6
 
+# techo de candidatas de Regla 3 (re-publicación, no récord nuevo) que se admiten por tienda en
+# una misma corrida — sin esto, el pool de productos "récord eterno" crece sin límite a medida
+# que se trackean más productos/tiendas, y en una corrida puede generar más volumen del que
+# Telegram puede drenar y del que conviene guardar en cola_publicacion (ver Postgres, sesión
+# 2026-08-20: la tabla llegó a 115MB/106k filas). Regla 1/2 (récords genuinos) nunca se cortan.
+# Elegido con datos reales de una corrida: Falabella 2663 y Sodimac 1201 candidatas de Regla 3
+# (las únicas dos que superan este número hoy); el resto de las tiendas no lo toca. Las
+# candidatas que exceden el tope no se pierden, quedan disponibles en la próxima corrida.
+MAX_REGLA3_POR_TIENDA_POR_CORRIDA = 400
+
 # Destino de Telegram por canal (el bot debe ser admin ahí con permiso "Publicar mensajes"):
 # @username para un canal público, o chat_id numérico (siempre negativo, ej. "-1004438197572")
 # para uno privado — canal_para_descuento() no distingue, telegram_publisher.py sí, al armar el
