@@ -45,6 +45,7 @@ from fuentes.falabella.listado import obtener_ofertas_listado  # noqa: E402
 from fuentes.falabella.producto import obtener_ofertas_productos_seguidos  # noqa: E402
 from fuentes.geekz.listado import obtener_ofertas_geekz  # noqa: E402
 from fuentes.gympro.listado import obtener_ofertas_gympro  # noqa: E402
+from fuentes.hites.listado import obtener_ofertas_hites  # noqa: E402
 from fuentes.luffytoys.listado import obtener_ofertas_luffytoys  # noqa: E402
 from fuentes.myshop.listado import obtener_ofertas_myshop  # noqa: E402
 from fuentes.novapet.listado import obtener_ofertas_novapet  # noqa: E402
@@ -247,6 +248,14 @@ async def _correr_paris(sesion: FetcherSession, repo_dir: Path) -> tuple[list[di
     return detectados, True
 
 
+async def _correr_hites(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
+    detectados, categorias_ok = await obtener_ofertas_hites(sesion)
+    if categorias_ok == 0:
+        log.error("Hites: se descarta esta corrida sin tocar su estado, no se leyó ninguna categoría.")
+        return [], False
+    return detectados, True
+
+
 async def _correr_luffytoys(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
     detectados, paginas_ok = await obtener_ofertas_luffytoys(sesion)
     if paginas_ok == 0:
@@ -417,6 +426,7 @@ _RUNNERS = {
     "xiaomi": _correr_xiaomi,
     "ripley": _correr_ripley,
     "paris": _correr_paris,
+    "hites": _correr_hites,
     "luffytoys": _correr_luffytoys,
     "geekz": _correr_geekz,
     "weplay": _correr_weplay,

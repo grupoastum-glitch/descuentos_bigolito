@@ -252,6 +252,7 @@ TIENDAS = [
     Tienda(id="xiaomi", nombre="Xiaomi"),
     Tienda(id="ripley", nombre="Ripley"),
     Tienda(id="paris", nombre="Paris"),
+    Tienda(id="hites", nombre="Hites"),
     Tienda(id="luffytoys", nombre="LuffyToys"),
     Tienda(id="geekz", nombre="Geekz"),
     Tienda(id="weplay", nombre="WePlay"),
