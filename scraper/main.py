@@ -37,6 +37,7 @@ import ofertas_writer  # noqa: E402
 import run_lock  # noqa: E402
 import telegram_publisher  # noqa: E402
 from fuentes.bestmart.listado import obtener_ofertas_bestmart  # noqa: E402
+from fuentes.decathlon.listado import obtener_ofertas_decathlon  # noqa: E402
 from fuentes.dust2.listado import obtener_ofertas_dust2  # noqa: E402
 from fuentes.easy.listado import obtener_ofertas_easy  # noqa: E402
 from fuentes.falabella.listado import obtener_ofertas_listado  # noqa: E402
@@ -347,6 +348,14 @@ async def _correr_superzoo(sesion: FetcherSession, repo_dir: Path) -> tuple[list
     return detectados, True
 
 
+async def _correr_decathlon(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
+    detectados, paginas_ok = await obtener_ofertas_decathlon(sesion)
+    if paginas_ok == 0:
+        log.error("Decathlon: se descarta esta corrida sin tocar su estado, no se leyó ninguna página.")
+        return [], False
+    return detectados, True
+
+
 # id de config.Tienda -> función que corre esa tienda. Se resuelve acá (no en config.py) para
 # evitar un import circular: fuentes/* ya hace `import config`.
 _RUNNERS = {
@@ -367,6 +376,7 @@ _RUNNERS = {
     "pcexpress": _correr_pcexpress,
     "sipoonline": _correr_sipoonline,
     "superzoo": _correr_superzoo,
+    "decathlon": _correr_decathlon,
 }
 
 

@@ -99,6 +99,12 @@ UMBRAL_DESCUENTO_MASCOTAS = 25  # mismo piso que Tech — decisión 2026-08-22, 
 # tiendas Tech; se puede bajar más adelante con datos reales de una corrida si el volumen sale
 # muy bajo, mismo criterio ya usado para ajustar los otros pisos.
 
+# tiendas de la categoría "Fitness" (deportes/actividad física en general, ver Tiendas/paginas.md)
+# — mismo mecanismo que TIENDAS_GEEK/TIENDAS_DECO_HOGAR/TIENDAS_TECH/TIENDAS_MASCOTAS: postean
+# exclusivas a CANAL_TELEGRAM_USERNAME["ofertas_fitness"] si superan UMBRAL_DESCUENTO_FITNESS.
+TIENDAS_FITNESS = {"decathlon"}
+UMBRAL_DESCUENTO_FITNESS = 25  # mismo piso que Tech/Mascotas — decisión 2026-08-22
+
 # cada cuántas horas se le da otra chance a un producto que sigue siendo récord (precio mínimo o
 # mayor descuento) pero no cambió desde la última vez que se publicó — evita que ofertas buenas
 # queden "enterradas" para suscriptores nuevos. Sin tope de publicaciones por día: un producto
@@ -129,6 +135,7 @@ CANAL_TELEGRAM_USERNAME = {
     "ofertas_deco_hogar": "-1003961858440",
     "ofertas_tech": "-1004332754687",
     "ofertas_mascotas": "-1004304511002",
+    "ofertas_fitness": "-1004357028199",
 }
 
 # tienda_id -> (canal, umbral) para las categorías especiales (geek, deco hogar, ...) — cada una
@@ -141,6 +148,7 @@ _CANAL_ESPECIAL_POR_TIENDA = {
     **{tid: ("ofertas_deco_hogar", UMBRAL_DESCUENTO_DECO_HOGAR) for tid in TIENDAS_DECO_HOGAR},
     **{tid: ("ofertas_tech", UMBRAL_DESCUENTO_TECH) for tid in TIENDAS_TECH},
     **{tid: ("ofertas_mascotas", UMBRAL_DESCUENTO_MASCOTAS) for tid in TIENDAS_MASCOTAS},
+    **{tid: ("ofertas_fitness", UMBRAL_DESCUENTO_FITNESS) for tid in TIENDAS_FITNESS},
 }
 
 
@@ -256,6 +264,7 @@ TIENDAS = [
     Tienda(id="pcexpress", nombre="PC Express"),
     Tienda(id="sipoonline", nombre="Sipoonline"),
     Tienda(id="superzoo", nombre="SuperZoo"),
+    Tienda(id="decathlon", nombre="Decathlon"),
 ]
 
 
