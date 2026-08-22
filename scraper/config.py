@@ -94,10 +94,11 @@ UMBRAL_DESCUENTO_TECH = 25  # subido de 20 a 25 — decisión 2026-08-17, mismo 
 # TIENDAS_GEEK/TIENDAS_DECO_HOGAR/TIENDAS_TECH: postean exclusivas a
 # CANAL_TELEGRAM_USERNAME["ofertas_mascotas"] si superan UMBRAL_DESCUENTO_MASCOTAS.
 TIENDAS_MASCOTAS = {"superzoo"}
-UMBRAL_DESCUENTO_MASCOTAS = 25  # mismo piso que Tech — decisión 2026-08-22, aunque la densidad de
-# descuento real medida en SuperZoo es más baja (~4.7% de productos en oferta real) que en las
-# tiendas Tech; se puede bajar más adelante con datos reales de una corrida si el volumen sale
-# muy bajo, mismo criterio ya usado para ajustar los otros pisos.
+UMBRAL_DESCUENTO_MASCOTAS = 20  # bajado de 25 a 20 el 2026-08-22: con solo SuperZoo en el canal
+# (densidad de descuento real ~4.7% de productos, más baja que en Tech) el piso de 25% dejaba muy
+# poco margen de candidatas nuevas por corrida — una vez publicadas, el canal dependía casi
+# enteramente de la Regla 3 (repost cada 6h) hasta la próxima oferta genuina. Decisión del usuario
+# para sostener un flujo más constante de publicaciones.
 
 # tiendas de la categoría "Fitness" (deportes/actividad física en general, ver Tiendas/paginas.md)
 # — mismo mecanismo que TIENDAS_GEEK/TIENDAS_DECO_HOGAR/TIENDAS_TECH/TIENDAS_MASCOTAS: postean

@@ -53,9 +53,10 @@ _BASE_URL = "https://tienda.pc-express.cl"
 _HOME_URL = f"{_BASE_URL}/"
 
 _PRODUCTOS_POR_PAGINA = 100  # tope real del selector "Mostrar" del sitio, confirmado en vivo
-_MAX_CATEGORIAS = 50  # techo de categorías hoja muestreadas por corrida — mismo criterio que
-# fuentes.myshop._MAX_CATEGORIAS/fuentes.pcfactory._MAX_CATEGORIAS: el árbol completo
-# (~251 categorías hoja) es demasiado para recorrer entero cada corrida.
+_MAX_CATEGORIAS = 126  # ~50% de las ~251 categorías hoja — subido de 50 el 2026-08-22 para
+# reducir la latencia de detección en categorías poco visitadas (antes ~20% de cobertura por
+# corrida); sin Cloudflare de por medio, pero nunca probado a este volumen — revisar
+# fallos_tiendas.json los primeros días por si el sitio empieza a devolver errores.
 _MAX_PAGINAS_POR_CATEGORIA = 10
 _PAGINAS_ALEATORIAS_POR_CATEGORIA = 2  # además de la página 1 (siempre se pide)
 

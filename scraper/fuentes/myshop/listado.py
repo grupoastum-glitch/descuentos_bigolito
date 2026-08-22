@@ -48,10 +48,12 @@ _BASE_URL = "https://www.myshop.cl"
 _API_URL = f"{_BASE_URL}/servicio/producto"
 
 _PRODUCTOS_POR_PAGINA = 12  # observado, confirmado contra el sitio real
-_MAX_CATEGORIAS = 45  # techo de categorías muestreadas por corrida — mismo criterio que
-# fuentes.sodimac._MAX_CATEGORIAS/fuentes.pcfactory._MAX_CATEGORIAS: el árbol completo
-# (~100-110 categorías hoja) es demasiado para recorrer entero cada corrida, y acá además cada
-# categoría cuesta un request extra (harvest del idFamilia) antes de poder pedir productos.
+_MAX_CATEGORIAS = 53  # ~50% de las ~100-110 categorías hoja — subido de 45 el 2026-08-22 para
+# reducir la latencia de detección en categorías poco visitadas (antes ~43% de cobertura por
+# corrida); acá cada categoría ya cuesta un request extra (harvest del idFamilia) antes de poder
+# pedir productos, así que el aumento de tráfico real es proporcionalmente mayor que en PC
+# Express/PCFactory — sin Cloudflare de por medio, pero nunca probado a este volumen, revisar
+# fallos_tiendas.json los primeros días por si el sitio empieza a devolver errores.
 _MAX_PAGINAS_POR_CATEGORIA = 10
 _PAGINAS_ALEATORIAS_POR_CATEGORIA = 2  # además de la página 1 (siempre se pide)
 

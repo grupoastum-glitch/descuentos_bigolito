@@ -49,8 +49,10 @@ _ASSETS_BASE = "https://assets.pcfactory.cl"
 _PRODUCTO_BASE = "https://www.pcfactory.cl/producto"
 
 _PRODUCTOS_POR_PAGINA = 48  # tope real del endpoint, confirmado contra el sitio real
-_MAX_CATEGORIAS = 60  # mismo criterio que fuentes.sodimac._MAX_CATEGORIAS: recorrer las 265
-# categorías hoja enteras sería excesivo cada corrida
+_MAX_CATEGORIAS = 133  # ~50% de las 265 categorías hoja — subido de 60 el 2026-08-22 para
+# reducir la latencia de detección en categorías poco visitadas (antes ~23% de cobertura por
+# corrida); sin Cloudflare de por medio, pero nunca probado a este volumen — revisar
+# fallos_tiendas.json los primeros días por si el sitio empieza a devolver errores.
 _MAX_PAGINAS_POR_CATEGORIA = 10
 _PAGINAS_ALEATORIAS_POR_CATEGORIA = 2  # además de la página 0 (siempre se pide)
 
