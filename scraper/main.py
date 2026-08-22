@@ -51,6 +51,7 @@ from fuentes.ripley.listado import obtener_ofertas_ripley  # noqa: E402
 from fuentes.sipoonline.listado import obtener_ofertas_sipoonline  # noqa: E402
 from fuentes.sodimac.listado import obtener_ofertas_sodimac  # noqa: E402
 from fuentes.spdigital.listado import obtener_ofertas_spdigital  # noqa: E402
+from fuentes.superzoo.listado import obtener_ofertas_superzoo  # noqa: E402
 from fuentes.weplay.listado import obtener_ofertas_weplay  # noqa: E402
 from fuentes.xiaomi.listado import obtener_ofertas_xiaomi  # noqa: E402
 
@@ -338,6 +339,14 @@ async def _correr_sipoonline(sesion: FetcherSession, repo_dir: Path) -> tuple[li
     return detectados, True
 
 
+async def _correr_superzoo(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
+    detectados, categorias_ok = await obtener_ofertas_superzoo(sesion)
+    if categorias_ok == 0:
+        log.error("SuperZoo: se descarta esta corrida sin tocar su estado, no se leyó ninguna categoría.")
+        return [], False
+    return detectados, True
+
+
 # id de config.Tienda -> función que corre esa tienda. Se resuelve acá (no en config.py) para
 # evitar un import circular: fuentes/* ya hace `import config`.
 _RUNNERS = {
@@ -357,6 +366,7 @@ _RUNNERS = {
     "myshop": _correr_myshop,
     "pcexpress": _correr_pcexpress,
     "sipoonline": _correr_sipoonline,
+    "superzoo": _correr_superzoo,
 }
 
 

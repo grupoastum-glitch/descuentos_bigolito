@@ -90,6 +90,15 @@ TIENDAS_TECH = {"bestmart", "spdigital", "pcfactory", "xiaomi", "dust2", "myshop
 # antes posteaba a los tramos genéricos ofertas_40/ofertas_vip, ahora exclusiva a ofertas_tech
 UMBRAL_DESCUENTO_TECH = 25  # subido de 20 a 25 — decisión 2026-08-17, mismo motivo que deco hogar
 
+# tiendas de la categoría "Mascotas" (ver Tiendas/paginas.md) — mismo mecanismo que
+# TIENDAS_GEEK/TIENDAS_DECO_HOGAR/TIENDAS_TECH: postean exclusivas a
+# CANAL_TELEGRAM_USERNAME["ofertas_mascotas"] si superan UMBRAL_DESCUENTO_MASCOTAS.
+TIENDAS_MASCOTAS = {"superzoo"}
+UMBRAL_DESCUENTO_MASCOTAS = 25  # mismo piso que Tech — decisión 2026-08-22, aunque la densidad de
+# descuento real medida en SuperZoo es más baja (~4.7% de productos en oferta real) que en las
+# tiendas Tech; se puede bajar más adelante con datos reales de una corrida si el volumen sale
+# muy bajo, mismo criterio ya usado para ajustar los otros pisos.
+
 # cada cuántas horas se le da otra chance a un producto que sigue siendo récord (precio mínimo o
 # mayor descuento) pero no cambió desde la última vez que se publicó — evita que ofertas buenas
 # queden "enterradas" para suscriptores nuevos. Sin tope de publicaciones por día: un producto
@@ -119,6 +128,7 @@ CANAL_TELEGRAM_USERNAME = {
     "ofertas_geek": "-1003952570153",
     "ofertas_deco_hogar": "-1003961858440",
     "ofertas_tech": "-1004332754687",
+    "ofertas_mascotas": "-1004304511002",
 }
 
 # tienda_id -> (canal, umbral) para las categorías especiales (geek, deco hogar, ...) — cada una
@@ -130,6 +140,7 @@ _CANAL_ESPECIAL_POR_TIENDA = {
     **{tid: ("ofertas_geek", UMBRAL_DESCUENTO_GEEK) for tid in TIENDAS_GEEK},
     **{tid: ("ofertas_deco_hogar", UMBRAL_DESCUENTO_DECO_HOGAR) for tid in TIENDAS_DECO_HOGAR},
     **{tid: ("ofertas_tech", UMBRAL_DESCUENTO_TECH) for tid in TIENDAS_TECH},
+    **{tid: ("ofertas_mascotas", UMBRAL_DESCUENTO_MASCOTAS) for tid in TIENDAS_MASCOTAS},
 }
 
 
@@ -244,6 +255,7 @@ TIENDAS = [
     Tienda(id="myshop", nombre="MyShop"),
     Tienda(id="pcexpress", nombre="PC Express"),
     Tienda(id="sipoonline", nombre="Sipoonline"),
+    Tienda(id="superzoo", nombre="SuperZoo"),
 ]
 
 
