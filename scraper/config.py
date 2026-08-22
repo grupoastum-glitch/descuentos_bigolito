@@ -86,7 +86,7 @@ UMBRAL_DESCUENTO_DECO_HOGAR = 25  # subido de 20 a 25 — decisión 2026-08-17, 
 # tiendas de la categoría "Tech" (tecnología/gaming, ver Tiendas/paginas.md) — mismo mecanismo
 # que TIENDAS_GEEK/TIENDAS_DECO_HOGAR: postean exclusivas a
 # CANAL_TELEGRAM_USERNAME["ofertas_tech"] si superan UMBRAL_DESCUENTO_TECH.
-TIENDAS_TECH = {"bestmart", "spdigital", "pcfactory", "xiaomi", "dust2", "myshop", "pcexpress"}  # Xiaomi sumada 2026-08-17 —
+TIENDAS_TECH = {"bestmart", "spdigital", "pcfactory", "xiaomi", "dust2", "myshop", "pcexpress", "sipoonline"}  # Xiaomi sumada 2026-08-17 —
 # antes posteaba a los tramos genéricos ofertas_40/ofertas_vip, ahora exclusiva a ofertas_tech
 UMBRAL_DESCUENTO_TECH = 25  # subido de 20 a 25 — decisión 2026-08-17, mismo motivo que deco hogar
 
@@ -243,6 +243,7 @@ TIENDAS = [
     Tienda(id="dust2", nombre="Dust2.gg"),
     Tienda(id="myshop", nombre="MyShop"),
     Tienda(id="pcexpress", nombre="PC Express"),
+    Tienda(id="sipoonline", nombre="Sipoonline"),
 ]
 
 
