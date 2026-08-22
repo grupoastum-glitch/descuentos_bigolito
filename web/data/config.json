@@ -46,8 +46,8 @@
     }
   ],
   "redes": [
-    { "nombre": "Instagram", "url": "https://www.instagram.com/descuentosbigolito", "icono": "camera" },
-    { "nombre": "TikTok", "url": "https://www.tiktok.com/@descuentosbigolito", "icono": "music-2" },
+    { "nombre": "Instagram", "url": "https://www.instagram.com/descuentosbigolito", "icono": "instagram" },
+    { "nombre": "TikTok", "url": "https://www.tiktok.com/@descuentosbigolito", "icono": "tiktok" },
     { "nombre": "Bot de Telegram", "url": "https://t.me/descuentos_bigolito_cl_bot", "icono": "send" }
   ],
   "contacto": {
