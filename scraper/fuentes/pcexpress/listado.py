@@ -13,9 +13,10 @@ Easy/MyShop ("hay descuentos reales dispersos en categorías normales, limitarse
 curada se queda corto") → se cosecha además el árbol de categorías. No hay API de categorías (a
 diferencia de PCFactory): se cosechan del menú mega de la home (mismo criterio que Sodimac),
 `route=product/category&path=<id>[_<id>...]` anidados por `_` (~296 paths, ~251 hojas — ningún
-otro path las tiene como prefijo, mismo filtro que `fuentes.myshop.listado`). Se muestrean
-`_MAX_CATEGORIAS` al azar (recorrerlas todas sería excesivo) + siempre la página de ofertas
-completa aparte (cabe entera en 1 request).
+otro path las tiene como prefijo, mismo filtro que `fuentes.myshop.listado`). Se leen las 251
+categorías completas cada corrida (subido de un sorteo al 50% el 2026-08-22 a 100% el mismo día
+— el volumen real (212 crudas) quedaba muy por debajo del resto del canal Tech) + siempre la
+página de ofertas completa aparte (cabe entera en 1 request).
 
 Cada categoría/ofertas se pide con `limit=100` (tope real confirmado: es el máximo que ofrece el
 selector "Mostrar" del propio sitio) y expone el total de páginas directo en el texto "Mostrando
@@ -53,10 +54,10 @@ _BASE_URL = "https://tienda.pc-express.cl"
 _HOME_URL = f"{_BASE_URL}/"
 
 _PRODUCTOS_POR_PAGINA = 100  # tope real del selector "Mostrar" del sitio, confirmado en vivo
-_MAX_CATEGORIAS = 126  # ~50% de las ~251 categorías hoja — subido de 50 el 2026-08-22 para
-# reducir la latencia de detección en categorías poco visitadas (antes ~20% de cobertura por
-# corrida); sin Cloudflare de por medio, pero nunca probado a este volumen — revisar
-# fallos_tiendas.json los primeros días por si el sitio empieza a devolver errores.
+# Se leen TODAS las categorías hoja cada corrida (sin sorteo) desde el 2026-08-22 — su volumen
+# (212 crudas al 50%) era el más bajo del canal Tech; sin Cloudflare de por medio, pero nunca
+# probado a este volumen — revisar fallos_tiendas.json los primeros días por si el sitio empieza
+# a devolver errores.
 _MAX_PAGINAS_POR_CATEGORIA = 10
 _PAGINAS_ALEATORIAS_POR_CATEGORIA = 2  # además de la página 1 (siempre se pide)
 
@@ -199,8 +200,8 @@ async def obtener_ofertas_pcexpress(sesion) -> tuple[list[dict], int]:
         log.error("PC Express: no se encontró ninguna categoría hoja en la home")
         return [], 0
 
-    categorias = random.sample(categorias_disponibles, min(_MAX_CATEGORIAS, len(categorias_disponibles)))
-    log.info("PC Express: %s categorías hoja disponibles, muestreando %s", len(categorias_disponibles), len(categorias))
+    categorias = categorias_disponibles
+    log.info("PC Express: leyendo las %s categorías hoja disponibles (sin sorteo)", len(categorias))
 
     semaforo = asyncio.Semaphore(config.CONCURRENCIA_LISTADO)
     etiquetas = ["ofertas", *categorias]
@@ -223,7 +224,7 @@ async def obtener_ofertas_pcexpress(sesion) -> tuple[list[dict], int]:
         todos.extend(resultado)
 
     if not todos:
-        log.error("PC Express: no se detectó ninguna oferta en ofertas + %s categorías muestreadas", len(categorias))
+        log.error("PC Express: no se detectó ninguna oferta en ofertas + %s categorías", len(categorias))
         return [], 0
 
     vistos: set[str] = set()

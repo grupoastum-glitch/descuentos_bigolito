@@ -18,8 +18,9 @@ paginar), acá la API exige el `idFamilia` numérico de cada categoría, que no 
 que visitar la página de cada categoría hoja una vez para sacarlo del `<input name="idFamilia">` de
 su propio `#filtroShop`.
 
-Con ~100-110 categorías hoja reales, se muestrean `_MAX_CATEGORIAS` al azar (mismo criterio que
-Sodimac/PCFactory: recorrerlas todas sería excesivo) y, de cada una, página 1 (ancla, da
+Con ~127 categorías hoja reales (medido en vivo el 2026-08-22, más que la estimación inicial de
+100-110), se leen TODAS cada corrida (subido de un sorteo al 50% a 100% el mismo día — el volumen
+real, 175 crudas, era el más bajo del canal Tech) y, de cada una, página 1 (ancla, da
 `resultado.productos.count` — el total real de la categoría) + `_PAGINAS_ALEATORIAS_POR_CATEGORIA`
 al azar hasta un techo. Liquidación (`tipo=6`) se suma siempre aparte, completa (catálogo chico,
 ~18 productos en la prueba en vivo).
@@ -48,12 +49,12 @@ _BASE_URL = "https://www.myshop.cl"
 _API_URL = f"{_BASE_URL}/servicio/producto"
 
 _PRODUCTOS_POR_PAGINA = 12  # observado, confirmado contra el sitio real
-_MAX_CATEGORIAS = 53  # ~50% de las ~100-110 categorías hoja — subido de 45 el 2026-08-22 para
-# reducir la latencia de detección en categorías poco visitadas (antes ~43% de cobertura por
-# corrida); acá cada categoría ya cuesta un request extra (harvest del idFamilia) antes de poder
-# pedir productos, así que el aumento de tráfico real es proporcionalmente mayor que en PC
-# Express/PCFactory — sin Cloudflare de por medio, pero nunca probado a este volumen, revisar
-# fallos_tiendas.json los primeros días por si el sitio empieza a devolver errores.
+# Se leen TODAS las categorías hoja cada corrida (sin sorteo) desde el 2026-08-22 — su volumen
+# (175 crudas al 50%) era el más bajo del canal Tech; acá cada categoría ya cuesta un request
+# extra (harvest del idFamilia) antes de poder pedir productos, así que el tráfico real es
+# proporcionalmente mayor que en PC Express/PCFactory para la misma cobertura — sin Cloudflare de
+# por medio, pero nunca probado a este volumen, revisar fallos_tiendas.json los primeros días por
+# si el sitio empieza a devolver errores.
 _MAX_PAGINAS_POR_CATEGORIA = 10
 _PAGINAS_ALEATORIAS_POR_CATEGORIA = 2  # además de la página 1 (siempre se pide)
 
@@ -209,8 +210,8 @@ async def obtener_ofertas_myshop(sesion) -> tuple[list[dict], int]:
         log.error("MyShop: no se encontró ninguna categoría hoja en la home")
         return [], 0
 
-    slugs = random.sample(slugs_disponibles, min(_MAX_CATEGORIAS, len(slugs_disponibles)))
-    log.info("MyShop: %s categorías hoja disponibles, muestreando %s", len(slugs_disponibles), len(slugs))
+    slugs = slugs_disponibles
+    log.info("MyShop: leyendo las %s categorías hoja disponibles (sin sorteo)", len(slugs))
 
     semaforo = asyncio.Semaphore(config.CONCURRENCIA_LISTADO)
     etiquetas = [*slugs, "liquidacion"]
