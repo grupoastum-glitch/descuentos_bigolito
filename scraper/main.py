@@ -43,6 +43,7 @@ from fuentes.easy.listado import obtener_ofertas_easy  # noqa: E402
 from fuentes.falabella.listado import obtener_ofertas_listado  # noqa: E402
 from fuentes.falabella.producto import obtener_ofertas_productos_seguidos  # noqa: E402
 from fuentes.geekz.listado import obtener_ofertas_geekz  # noqa: E402
+from fuentes.gympro.listado import obtener_ofertas_gympro  # noqa: E402
 from fuentes.luffytoys.listado import obtener_ofertas_luffytoys  # noqa: E402
 from fuentes.myshop.listado import obtener_ofertas_myshop  # noqa: E402
 from fuentes.paris.listado import obtener_ofertas_paris  # noqa: E402
@@ -51,6 +52,7 @@ from fuentes.pcfactory.listado import obtener_ofertas_pcfactory  # noqa: E402
 from fuentes.ripley.listado import obtener_ofertas_ripley  # noqa: E402
 from fuentes.sipoonline.listado import obtener_ofertas_sipoonline  # noqa: E402
 from fuentes.sodimac.listado import obtener_ofertas_sodimac  # noqa: E402
+from fuentes.sparta.listado import obtener_ofertas_sparta  # noqa: E402
 from fuentes.spdigital.listado import obtener_ofertas_spdigital  # noqa: E402
 from fuentes.superzoo.listado import obtener_ofertas_superzoo  # noqa: E402
 from fuentes.weplay.listado import obtener_ofertas_weplay  # noqa: E402
@@ -356,6 +358,22 @@ async def _correr_decathlon(sesion: FetcherSession, repo_dir: Path) -> tuple[lis
     return detectados, True
 
 
+async def _correr_sparta(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
+    detectados, paginas_ok = await obtener_ofertas_sparta(sesion)
+    if paginas_ok == 0:
+        log.error("Sparta: se descarta esta corrida sin tocar su estado, no se leyó ninguna página.")
+        return [], False
+    return detectados, True
+
+
+async def _correr_gympro(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
+    detectados, paginas_ok = await obtener_ofertas_gympro(sesion)
+    if paginas_ok == 0:
+        log.error("GymPro: se descarta esta corrida sin tocar su estado, no se leyó ninguna página.")
+        return [], False
+    return detectados, True
+
+
 # id de config.Tienda -> función que corre esa tienda. Se resuelve acá (no en config.py) para
 # evitar un import circular: fuentes/* ya hace `import config`.
 _RUNNERS = {
@@ -377,6 +395,8 @@ _RUNNERS = {
     "sipoonline": _correr_sipoonline,
     "superzoo": _correr_superzoo,
     "decathlon": _correr_decathlon,
+    "sparta": _correr_sparta,
+    "gympro": _correr_gympro,
 }
 
 

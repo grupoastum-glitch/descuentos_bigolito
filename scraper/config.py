@@ -102,7 +102,7 @@ UMBRAL_DESCUENTO_MASCOTAS = 25  # mismo piso que Tech — decisión 2026-08-22, 
 # tiendas de la categoría "Fitness" (deportes/actividad física en general, ver Tiendas/paginas.md)
 # — mismo mecanismo que TIENDAS_GEEK/TIENDAS_DECO_HOGAR/TIENDAS_TECH/TIENDAS_MASCOTAS: postean
 # exclusivas a CANAL_TELEGRAM_USERNAME["ofertas_fitness"] si superan UMBRAL_DESCUENTO_FITNESS.
-TIENDAS_FITNESS = {"decathlon"}
+TIENDAS_FITNESS = {"decathlon", "sparta", "gympro"}
 UMBRAL_DESCUENTO_FITNESS = 25  # mismo piso que Tech/Mascotas — decisión 2026-08-22
 
 # cada cuántas horas se le da otra chance a un producto que sigue siendo récord (precio mínimo o
@@ -265,6 +265,8 @@ TIENDAS = [
     Tienda(id="sipoonline", nombre="Sipoonline"),
     Tienda(id="superzoo", nombre="SuperZoo"),
     Tienda(id="decathlon", nombre="Decathlon"),
+    Tienda(id="sparta", nombre="Sparta"),
+    Tienda(id="gympro", nombre="GymPro"),
 ]
 
 
