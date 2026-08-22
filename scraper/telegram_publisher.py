@@ -39,9 +39,12 @@ _IMAGEN_USER_AGENT = (
 # mismo y se suben los bytes en vez de la URL (ver _descargar_imagen). Confirmado para Sodimac:
 # media.sodimac.cl responde con cookie __cf_bm (Cloudflare Bot Management), a diferencia de
 # media.falabella.com que no la tiene — un request normal (como el nuestro) pasa sin problema,
-# pero el fetcher de Telegram queda bloqueado. Si otra tienda presenta el mismo síntoma (se
-# publica sin foto pese a que `imagen` es una URL válida), sumarla acá.
-_COMERCIOS_CON_CDN_BLOQUEADO = {"Sodimac"}
+# pero el fetcher de Telegram queda bloqueado. Confirmado también para Sparta (2026-08-22):
+# sparta.cl sirve las imágenes detrás de Varnish/Fastly, que devuelve HTTP 403 ("Error 54113")
+# específicamente para el User-Agent real de Telegram (`TelegramBot (like TwitterBot)`), mientras
+# que un request normal pasa con 200. Si otra tienda presenta el mismo síntoma (se publica sin
+# foto pese a que `imagen` es una URL válida), sumarla acá.
+_COMERCIOS_CON_CDN_BLOQUEADO = {"Sodimac", "Sparta"}
 
 
 async def _descargar_imagen(url: str) -> bytes | None:
