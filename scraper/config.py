@@ -93,7 +93,7 @@ UMBRAL_DESCUENTO_TECH = 25  # subido de 20 a 25 — decisión 2026-08-17, mismo 
 # tiendas de la categoría "Mascotas" (ver Tiendas/paginas.md) — mismo mecanismo que
 # TIENDAS_GEEK/TIENDAS_DECO_HOGAR/TIENDAS_TECH: postean exclusivas a
 # CANAL_TELEGRAM_USERNAME["ofertas_mascotas"] si superan UMBRAL_DESCUENTO_MASCOTAS.
-TIENDAS_MASCOTAS = {"superzoo", "clubdeperrosygatos"}
+TIENDAS_MASCOTAS = {"superzoo", "clubdeperrosygatos", "pethome"}
 UMBRAL_DESCUENTO_MASCOTAS = 20  # bajado de 25 a 20 el 2026-08-22: con solo SuperZoo en el canal
 # (densidad de descuento real ~4.7% de productos, más baja que en Tech) el piso de 25% dejaba muy
 # poco margen de candidatas nuevas por corrida — una vez publicadas, el canal dependía casi
@@ -266,6 +266,7 @@ TIENDAS = [
     Tienda(id="sipoonline", nombre="Sipoonline"),
     Tienda(id="superzoo", nombre="SuperZoo"),
     Tienda(id="clubdeperrosygatos", nombre="Club de Perros y Gatos"),
+    Tienda(id="pethome", nombre="PetHome"),
     Tienda(id="decathlon", nombre="Decathlon"),
     Tienda(id="sparta", nombre="Sparta"),
     Tienda(id="gympro", nombre="GymPro"),
