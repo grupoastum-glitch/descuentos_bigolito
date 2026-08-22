@@ -47,10 +47,12 @@ from fuentes.geekz.listado import obtener_ofertas_geekz  # noqa: E402
 from fuentes.gympro.listado import obtener_ofertas_gympro  # noqa: E402
 from fuentes.luffytoys.listado import obtener_ofertas_luffytoys  # noqa: E402
 from fuentes.myshop.listado import obtener_ofertas_myshop  # noqa: E402
+from fuentes.novapet.listado import obtener_ofertas_novapet  # noqa: E402
 from fuentes.paris.listado import obtener_ofertas_paris  # noqa: E402
 from fuentes.pcexpress.listado import obtener_ofertas_pcexpress  # noqa: E402
 from fuentes.pcfactory.listado import obtener_ofertas_pcfactory  # noqa: E402
 from fuentes.pethome.listado import obtener_ofertas_pethome  # noqa: E402
+from fuentes.petsonline.listado import obtener_ofertas_petsonline  # noqa: E402
 from fuentes.ripley.listado import obtener_ofertas_ripley  # noqa: E402
 from fuentes.sipoonline.listado import obtener_ofertas_sipoonline  # noqa: E402
 from fuentes.sodimac.listado import obtener_ofertas_sodimac  # noqa: E402
@@ -368,6 +370,22 @@ async def _correr_pethome(sesion: FetcherSession, repo_dir: Path) -> tuple[list[
     return detectados, True
 
 
+async def _correr_novapet(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
+    detectados, paginas_ok = await obtener_ofertas_novapet(sesion)
+    if paginas_ok == 0:
+        log.error("NovaPet: se descarta esta corrida sin tocar su estado, no se leyó ninguna página.")
+        return [], False
+    return detectados, True
+
+
+async def _correr_petsonline(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
+    detectados, paginas_ok = await obtener_ofertas_petsonline(sesion)
+    if paginas_ok == 0:
+        log.error("PetsOnline: se descarta esta corrida sin tocar su estado, no se leyó ninguna página.")
+        return [], False
+    return detectados, True
+
+
 async def _correr_decathlon(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
     detectados, paginas_ok = await obtener_ofertas_decathlon(sesion)
     if paginas_ok == 0:
@@ -414,6 +432,8 @@ _RUNNERS = {
     "superzoo": _correr_superzoo,
     "clubdeperrosygatos": _correr_clubdeperrosygatos,
     "pethome": _correr_pethome,
+    "novapet": _correr_novapet,
+    "petsonline": _correr_petsonline,
     "decathlon": _correr_decathlon,
     "sparta": _correr_sparta,
     "gympro": _correr_gympro,
