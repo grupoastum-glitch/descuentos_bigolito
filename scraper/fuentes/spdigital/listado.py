@@ -16,12 +16,13 @@ sale de "0 - 48 de 406 productos" en `[class*=paginationInfo]`. Mismo muestreo q
 
 Cada tarjeta trae hasta 3 precios: uno tachado (precio normal, `Fractal-Price__price--strikethrough`,
 solo si el producto está en oferta) y dos vigentes con su propia etiqueta ("Transferencias" /
-"Otros medios de pago" — descuento extra por pagar con transferencia bancaria). Se usa "Otros
-medios de pago" como precio_actual (el que aplica a cualquier comprador, sin depender de un medio
-de pago específico) contra el precio tachado como precio_normal — mismo criterio ya aplicado a
-Falabella/Xiaomi de no usar precios que no aplican a cualquier comprador (ver
-Tiendas/paginas.md / memoria del proyecto sobre precio CMR). Se recalcula el % siempre desde esos
-2 precios crudos, nunca desde el badge "N% DCTO." que muestra el sitio.
+"Otros medios de pago" — el de "Transferencias" es más bajo, un descuento extra por pagar con
+transferencia bancaria). Se usa el precio más bajo de los que muestra la tarjeta como
+precio_actual (no una restricción tipo CMR de Falabella/Xiaomi — pagar por transferencia está al
+alcance de cualquier comprador, no exige una tarjeta propia con aprobación previa; decisión
+2026-08-22, mismo criterio ya aplicado en PCFactory/PC Express) contra el precio tachado como
+precio_normal. Se recalcula el % siempre desde esos 2 precios crudos, nunca desde el badge
+"N% DCTO." que muestra el sitio.
 """
 from __future__ import annotations
 
@@ -77,7 +78,7 @@ def _item_desde_card(card) -> dict | None:
         etiqueta = spans[1].get_all_text(strip=True).strip().lower()
         if precio:
             precios_por_medio[etiqueta] = precio
-    precio_actual = precios_por_medio.get("otros medios de pago") or precios_por_medio.get("transferencias")
+    precio_actual = min(precios_por_medio.values()) if precios_por_medio else None
     if not precio_actual or precio_normal <= precio_actual:
         return None
 

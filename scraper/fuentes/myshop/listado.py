@@ -24,13 +24,13 @@ Sodimac/PCFactory: recorrerlas todas sería excesivo) y, de cada una, página 1 
 al azar hasta un techo. Liquidación (`tipo=6`) se suma siempre aparte, completa (catálogo chico,
 ~18 productos en la prueba en vivo).
 
-Cada producto trae 3 precios: `precio` (Transferencia o Efectivo), `precio_tarjeta` (pagando con
-tarjeta — siempre `precio * 1.055` exacto, un recargo fijo del 5.5%, confirmado en 12/12 productos
-de muestra) y `precio_normal` (precio de lista antes del descuento). Igual que en SPDigital, se usa
-el precio que no depende de un medio de pago específico: `precio_actual = precio_tarjeta` contra
-`precio_normal` — más conservador que usar `precio` (transferencia), pero consistente con el resto
-del proyecto. Se recalcula el % siempre desde esos 2, nunca desde el `descuento`/`oferta` que ya
-trae el JSON.
+Cada producto trae 3 precios: `precio` (Transferencia o Efectivo, el más bajo), `precio_tarjeta`
+(pagando con tarjeta — siempre `precio * 1.055` exacto, un recargo fijo del 5.5%, confirmado en
+12/12 productos de muestra) y `precio_normal` (precio de lista antes del descuento). Se usa el
+precio más bajo, `precio_actual = precio` (Transferencia/Efectivo) — no es una restricción tipo
+CMR de Falabella/Xiaomi, pagar así está al alcance de cualquier comprador; decisión 2026-08-22,
+mismo criterio ya aplicado en PCFactory/PC Express/SPDigital. Se recalcula el % siempre desde
+`precio`/`precio_normal`, nunca desde el `descuento`/`oferta` que ya trae el JSON.
 """
 from __future__ import annotations
 
@@ -78,7 +78,7 @@ def _slugs_hoja(html_: str) -> list[str]:
 
 def _item_desde_producto(producto: dict) -> dict | None:
     try:
-        precio_actual = float(producto["precio_tarjeta"])
+        precio_actual = float(producto["precio"])
         precio_normal = float(producto["precio_normal"])
     except (KeyError, TypeError, ValueError):
         return None
