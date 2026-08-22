@@ -33,8 +33,8 @@ _BASE_URL = "https://www.novapet.cl"
 _COLLECTION_URL = f"{_BASE_URL}/collections/all"
 _PRODUCTS_JSON_URL = f"{_BASE_URL}/products.json"
 _LIMIT = 250
-_PAGINAS_POR_CORRIDA = 3  # ~23% de cobertura — decisión del usuario 2026-08-22, mismo número
-# absoluto de páginas que PetHome, dado el mismo tipo de volumen de descuento alto (64.8%).
+_PAGINAS_POR_CORRIDA = 7  # ~54% de cobertura — subido de 3 (~23%) el 2026-08-22 a pedido del
+# usuario, sin haber visto señales de bloqueo con la cobertura anterior.
 
 _TOTAL_RE = re.compile(r"([\d.,]+)\s*productos", re.I)
 
