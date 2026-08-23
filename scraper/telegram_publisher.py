@@ -42,9 +42,14 @@ _IMAGEN_USER_AGENT = (
 # pero el fetcher de Telegram queda bloqueado. Confirmado también para Sparta (2026-08-22):
 # sparta.cl sirve las imágenes detrás de Varnish/Fastly, que devuelve HTTP 403 ("Error 54113")
 # específicamente para el User-Agent real de Telegram (`TelegramBot (like TwitterBot)`), mientras
-# que un request normal pasa con 200. Si otra tienda presenta el mismo síntoma (se publica sin
-# foto pese a que `imagen` es una URL válida), sumarla acá.
-_COMERCIOS_CON_CDN_BLOQUEADO = {"Sodimac", "Sparta"}
+# que un request normal pasa con 200. Sumado también Hites (2026-08-22): mismo síntoma reportado
+# (se publica sin foto), imágenes servidas desde www.hites.com/dw/image/... — mismo dominio que ya
+# está detrás de Cloudflare (ver scraper/fuentes/hites/listado.py) — no reproducible con un
+# request manual (igual que Sodimac/Sparta al momento de confirmarlos: el bot-management actúa
+# sobre el fingerprint/IP real de los servidores de Telegram, no sobre un curl de prueba). Si otra
+# tienda presenta el mismo síntoma (se publica sin foto pese a que `imagen` es una URL válida),
+# sumarla acá.
+_COMERCIOS_CON_CDN_BLOQUEADO = {"Sodimac", "Sparta", "Hites"}
 
 
 async def _descargar_imagen(url: str) -> bytes | None:

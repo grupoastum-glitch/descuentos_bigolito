@@ -105,7 +105,7 @@ def _item_desde_tarjeta(gtm_json: str, bloque: str) -> dict | None:
     m_link = _IMAGEN_RE.search(bloque)
     if not m_link:
         return None
-    url, imagen = m_link.groups()
+    url, imagen = (html.unescape(g) for g in m_link.groups())
     if url.startswith("/"):
         url = f"{_BASE_URL}{url}"
 
