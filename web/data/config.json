@@ -27,7 +27,7 @@
       "nombre": "Descuentos VIP",
       "nombre_corto": "VIP",
       "descripcion": "Accede a varios canales VIP con descuentos del 50% y más, solo por:\n\n$4.000 cada 30 días.",
-      "canales_incluidos": ["Retail VIP 💎", "Geek VIP 🕹️", "Deco/Hogar VIP 🏠", "Tech VIP 🖥", "Mascotas VIP 🐶🐱", "Fitness VIP 🏋️"],
+      "canales_incluidos": ["Retail VIP 💎", "Geek VIP 🕹️", "Deco/Hogar VIP 🏠", "Tech VIP 🖥", "Mascotas VIP 🐶🐱", "Fitness VIP 🏋️", "+80% OFF VIP 🔥"],
       "nota": "Pago seguro con MercadoPago, cancelas cuando quieras.",
       "monto": 4000,
       "frecuencia": 30,
