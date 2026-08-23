@@ -43,6 +43,7 @@ CANAL_CHAT_ID = {
         ("-1004332754687", "+20% OFF TECH VIP 🖥"),
         ("-1004304511002", "+25% OFF MASCOTAS VIP 🐶🐱"),
         ("-1004357028199", "+25% OFF FITNESS VIP 🏋️"),
+        ("-1004484005134", "+80% OFF ERRORES VIP 🎯"),
     ],
     "test2": [("CAMBIAR_POR_CHAT_ID_REAL", "Canal Test 2")],  # canal de prueba, todavía no existe en Telegram
 }

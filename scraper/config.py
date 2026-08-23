@@ -59,6 +59,14 @@ DESCUENTO_MINIMO_WEB_PCT = 20  # piso para aparecer en el feed de la web
 # se postean primero (antes que el resto de la corrida, ver main.py) y se avisa aparte al admin
 # por si hay que verificar/comprar rápido antes de que el comercio lo corrija.
 UMBRAL_DESCUENTO_EXTREMO = 90
+
+# piso para el canal cross-tienda "ofertas_top" (todas las tiendas del proyecto, sin importar su
+# canal habitual) — a diferencia de los demás tramos, esta oferta se publica DUPLICADA: además de
+# su canal normal, también cae acá si supera este piso (ver ofertas_writer.procesar()). El
+# objetivo explícito es cazar errores de precio reales que el consumidor pueda aprovechar, no solo
+# "ofertas grandes" — decisión 2026-08-22: no se filtran precios sospechosos (ej. $1, precio
+# "normal" tipo placeholder $999.999), es justamente el tipo de hallazgo que se busca acá.
+UMBRAL_DESCUENTO_TOP = 80
 # (mínimo %, nombre de canal) — de mayor a menor: canal_para_descuento() devuelve el primer
 # tramo que matchea, así que un descuento de 50%+ cae en "ofertas_vip" y nunca llega al de 25%
 # — cada tramo es exclusivo de su canal, sin duplicar posteos. Sumar un tramo nuevo es agregar
@@ -137,6 +145,7 @@ CANAL_TELEGRAM_USERNAME = {
     "ofertas_tech": "-1004332754687",
     "ofertas_mascotas": "-1004304511002",
     "ofertas_fitness": "-1004357028199",
+    "ofertas_top": "-1004484005134",
 }
 
 # tienda_id -> (canal, umbral) para las categorías especiales (geek, deco hogar, ...) — cada una

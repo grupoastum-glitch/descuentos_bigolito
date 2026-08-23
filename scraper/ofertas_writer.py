@@ -216,7 +216,7 @@ async def procesar(pool: asyncpg.Pool, items_detectados: list[dict], tienda: con
         registros_a_upsertear.append(registro)
 
         if es_candidata:
-            ofertas_para_publicar.append({
+            oferta_base = {
                 "id": clave,
                 "titulo": registro["titulo"],
                 "url": afiliar_url(registro["url"], tienda.nombre),
@@ -229,11 +229,18 @@ async def procesar(pool: asyncpg.Pool, items_detectados: list[dict], tienda: con
                 "precio_minimo_anterior": decision.precio_minimo_anterior,
                 "fecha_precio_minimo_anterior": decision.fecha_precio_minimo_anterior,
                 "historial": (historial + [evento_nuevo])[-_HISTORIAL_MAX_EN_OFERTA:],
-                "canal": config.canal_para_oferta(tienda.id, registro["descuento_pct"]),
                 "comercio": tienda.nombre,
                 "ultimo_historial_id": historial[-1]["id"] if historial else None,
                 "puede_reusar_fila": decision.puede_reusar_fila,
+            }
+            ofertas_para_publicar.append({
+                **oferta_base,
+                "canal": config.canal_para_oferta(tienda.id, registro["descuento_pct"]),
             })
+            if registro["descuento_pct"] >= config.UMBRAL_DESCUENTO_TOP:
+                # se publica DUPLICADA: además de su canal normal (arriba), también cae acá si
+                # supera el piso — ver config.UMBRAL_DESCUENTO_TOP.
+                ofertas_para_publicar.append({**oferta_base, "canal": "ofertas_top"})
 
     await db.upsert_productos(pool, registros_a_upsertear)
     await db.marcar_inactivos(pool, tienda.id, claves)
