@@ -132,8 +132,11 @@ def _formatear_caption(oferta: dict) -> str:
         )
 
     lineas.append("")
-    lineas.append("🔗 VER PRODUCTO 👀")
-    lineas.append(url)
+    if oferta["comercio"] in config.SOICOS_DEEPLINK_TEMPLATES:
+        lineas.append(f'🔗 <a href="{url}">VER PRODUCTO</a> 👈 👀')
+    else:
+        lineas.append("🔗 VER PRODUCTO 👀")
+        lineas.append(url)
 
     # backstop defensivo — el recorte de eventos de arriba ya debería alcanzar, pero un título
     # muy largo podría igual pasarse del límite de Telegram para el caption de una foto (1024,

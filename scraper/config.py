@@ -243,6 +243,9 @@ SOICOS_DEEPLINK_TEMPLATES: dict[str, str] = {
     # programa, uno distinto por tienda (confirmado en vivo con el "Generador de Deeplinks" de
     # Soicos: pid=15773 = "Sodimac (CL)").
     "Sodimac": "https://ad.soicos.com/sclick?aid=56144&pid=15773&dl={url}",
+    "Paris": "https://ad.soicos.com/sclick?aid=56144&pid=10032&dl={url}",
+    "Easy": "https://ad.soicos.com/sclick?aid=56144&pid=14089&dl={url}",
+    "ABC": "https://ad.soicos.com/sclick?aid=56144&pid=9902&dl={url}",
 }
 
 
