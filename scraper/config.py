@@ -274,6 +274,7 @@ TIENDAS = [
     Tienda(id="hm", nombre="H&M"),
     Tienda(id="fensa", nombre="Fensa"),
     Tienda(id="nike", nombre="Nike"),
+    Tienda(id="caterpillar", nombre="Caterpillar"),
     Tienda(id="luffytoys", nombre="LuffyToys"),
     Tienda(id="geekz", nombre="Geekz"),
     Tienda(id="weplay", nombre="WePlay"),

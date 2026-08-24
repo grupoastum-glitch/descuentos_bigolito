@@ -38,6 +38,7 @@ import run_lock  # noqa: E402
 import telegram_publisher  # noqa: E402
 from fuentes.abc.listado import obtener_ofertas_abc  # noqa: E402
 from fuentes.bestmart.listado import obtener_ofertas_bestmart  # noqa: E402
+from fuentes.caterpillar.listado import obtener_ofertas_caterpillar  # noqa: E402
 from fuentes.clubdeperrosygatos.listado import obtener_ofertas_clubdeperrosygatos  # noqa: E402
 from fuentes.decathlon.listado import obtener_ofertas_decathlon  # noqa: E402
 from fuentes.dust2.listado import obtener_ofertas_dust2  # noqa: E402
@@ -455,6 +456,14 @@ async def _correr_nike(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dic
     return detectados, True
 
 
+async def _correr_caterpillar(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
+    detectados, ok = await obtener_ofertas_caterpillar(sesion)
+    if ok == 0:
+        log.error("Caterpillar: se descarta esta corrida sin tocar su estado, no se leyó el catálogo.")
+        return [], False
+    return detectados, True
+
+
 # id de config.Tienda -> función que corre esa tienda. Se resuelve acá (no en config.py) para
 # evitar un import circular: fuentes/* ya hace `import config`.
 _RUNNERS = {
@@ -487,6 +496,7 @@ _RUNNERS = {
     "sparta": _correr_sparta,
     "gympro": _correr_gympro,
     "nike": _correr_nike,
+    "caterpillar": _correr_caterpillar,
 }
 
 
