@@ -46,9 +46,14 @@ _IMAGEN_USER_AGENT = (
 # (se publica sin foto), imágenes servidas desde www.hites.com/dw/image/... — mismo dominio que ya
 # está detrás de Cloudflare (ver scraper/fuentes/hites/listado.py) — no reproducible con un
 # request manual (igual que Sodimac/Sparta al momento de confirmarlos: el bot-management actúa
-# sobre el fingerprint/IP real de los servidores de Telegram, no sobre un curl de prueba). Si otra
-# tienda presenta el mismo síntoma (se publica sin foto pese a que `imagen` es una URL válida),
-# sumarla acá.
+# sobre el fingerprint/IP real de los servidores de Telegram, no sobre un curl de prueba). ABC
+# (sumada 2026-08-24, ver scraper/fuentes/abc/listado.py) sirve las imágenes con el mismo patrón
+# exacto que Hites — www.abc.cl/dw/image/... (dominio propio, no un CDN aparte), también detrás de
+# Cloudflare, mismo motor Demandware — candidata fuerte a necesitar este mismo fix, pero se decidió
+# NO sumarla preventivamente (para no pagar el costo de descarga+reupload en Railway sin necesidad
+# confirmada) — se espera confirmar con una corrida real si se publica sin foto antes de agregarla.
+# Si otra tienda presenta el mismo síntoma (se publica sin foto pese a que `imagen` es una URL
+# válida), sumarla acá.
 _COMERCIOS_CON_CDN_BLOQUEADO = {"Sodimac", "Sparta", "Hites"}
 
 

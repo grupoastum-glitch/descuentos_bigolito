@@ -36,6 +36,7 @@ import monitoreo_tiendas  # noqa: E402
 import ofertas_writer  # noqa: E402
 import run_lock  # noqa: E402
 import telegram_publisher  # noqa: E402
+from fuentes.abc.listado import obtener_ofertas_abc  # noqa: E402
 from fuentes.bestmart.listado import obtener_ofertas_bestmart  # noqa: E402
 from fuentes.clubdeperrosygatos.listado import obtener_ofertas_clubdeperrosygatos  # noqa: E402
 from fuentes.decathlon.listado import obtener_ofertas_decathlon  # noqa: E402
@@ -256,6 +257,14 @@ async def _correr_hites(sesion: FetcherSession, repo_dir: Path) -> tuple[list[di
     return detectados, True
 
 
+async def _correr_abc(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
+    detectados, categorias_ok = await obtener_ofertas_abc(sesion)
+    if categorias_ok == 0:
+        log.error("ABC: se descarta esta corrida sin tocar su estado, no se leyó ninguna categoría.")
+        return [], False
+    return detectados, True
+
+
 async def _correr_luffytoys(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
     detectados, paginas_ok = await obtener_ofertas_luffytoys(sesion)
     if paginas_ok == 0:
@@ -427,6 +436,7 @@ _RUNNERS = {
     "ripley": _correr_ripley,
     "paris": _correr_paris,
     "hites": _correr_hites,
+    "abc": _correr_abc,
     "luffytoys": _correr_luffytoys,
     "geekz": _correr_geekz,
     "weplay": _correr_weplay,
