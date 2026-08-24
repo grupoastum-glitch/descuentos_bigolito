@@ -51,6 +51,7 @@ from fuentes.hites.listado import obtener_ofertas_hites  # noqa: E402
 from fuentes.hm.listado import obtener_ofertas_hm  # noqa: E402
 from fuentes.luffytoys.listado import obtener_ofertas_luffytoys  # noqa: E402
 from fuentes.myshop.listado import obtener_ofertas_myshop  # noqa: E402
+from fuentes.nike.listado import obtener_ofertas_nike  # noqa: E402
 from fuentes.novapet.listado import obtener_ofertas_novapet  # noqa: E402
 from fuentes.paris.listado import obtener_ofertas_paris  # noqa: E402
 from fuentes.pcexpress.listado import obtener_ofertas_pcexpress  # noqa: E402
@@ -446,6 +447,14 @@ async def _correr_gympro(sesion: FetcherSession, repo_dir: Path) -> tuple[list[d
     return detectados, True
 
 
+async def _correr_nike(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
+    detectados, ok = await obtener_ofertas_nike(sesion)
+    if ok == 0:
+        log.error("Nike: se descarta esta corrida sin tocar su estado, no se leyó el catálogo.")
+        return [], False
+    return detectados, True
+
+
 # id de config.Tienda -> función que corre esa tienda. Se resuelve acá (no en config.py) para
 # evitar un import circular: fuentes/* ya hace `import config`.
 _RUNNERS = {
@@ -477,6 +486,7 @@ _RUNNERS = {
     "decathlon": _correr_decathlon,
     "sparta": _correr_sparta,
     "gympro": _correr_gympro,
+    "nike": _correr_nike,
 }
 
 
