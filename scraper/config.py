@@ -239,7 +239,10 @@ RUTA_PRODUCTOS_SEGUIDOS = "scraper/productos_seguidos.json"
 # cada programa y entrega el formato real de link. "{url}" se reemplaza por la URL del producto
 # url-encodeada.
 SOICOS_DEEPLINK_TEMPLATES: dict[str, str] = {
-    # "Falabella": "https://track.soicos.com/click?...&url={url}",
+    # aid=56144 es el ID de afiliado, fijo para toda la cuenta de Soicos — pid es el ID del
+    # programa, uno distinto por tienda (confirmado en vivo con el "Generador de Deeplinks" de
+    # Soicos: pid=15773 = "Sodimac (CL)").
+    "Sodimac": "https://ad.soicos.com/sclick?aid=56144&pid=15773&dl={url}",
 }
 
 
