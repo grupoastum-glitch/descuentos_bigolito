@@ -449,7 +449,10 @@ async def _correr_gympro(sesion: FetcherSession, repo_dir: Path) -> tuple[list[d
 
 
 async def _correr_nike(sesion: FetcherSession, repo_dir: Path) -> tuple[list[dict], bool]:
-    detectados, ok = await obtener_ofertas_nike(sesion)
+    # sesion (FetcherSession compartida) no se usa acá: obtener_ofertas_nike arma su propia
+    # sesión headless internamente (ver fuentes/nike/listado.py) — se mantiene en la firma
+    # para no romper la llamada genérica runner(sesion, repo_dir) de _procesar_tienda.
+    detectados, ok = await obtener_ofertas_nike(_LOCK_HEADLESS)
     if ok == 0:
         log.error("Nike: se descarta esta corrida sin tocar su estado, no se leyó el catálogo.")
         return [], False

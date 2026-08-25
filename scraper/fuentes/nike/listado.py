@@ -4,8 +4,16 @@ General: decisión explícita del usuario, encaja temáticamente con indumentari
 deportivas (a diferencia de H&M/Moda, que se solapaba con todo Retail General).
 
 VTEX, misma API clásica que `fuentes.hm.listado`/`fuentes.fensa.listado`
-(`/api/catalog_system/pub/...`), funcionando directo sobre el dominio propio pese a Cloudflare
-(cookie `__cf_bm` presente pero no bloquea un fetch plano).
+(`/api/catalog_system/pub/...`). Hasta el 2026-08-24 funcionaba directo sobre el dominio propio
+pese a Cloudflare (cookie `__cf_bm` presente pero no bloqueaba un fetch plano) — desde el
+2026-08-25 la primera página empezó a devolver 403 en cada corrida de Railway (local seguía
+sirviendo 200, mismo patrón que WePlay/Ripley: la protección se activa contra la IP del
+contenedor, no localmente). Por eso acá se usa `AsyncStealthySession` (Chromium headless real)
+en vez de la `FetcherSession` compartida, igual que `fuentes.weplay.listado` — mismo tipo de
+fetch (JSON plano, sin necesidad de renderizar nada visual), mismos flags
+(`disable_resources=True`, `network_idle=False`). `lock_headless` (ver `main.py`) es compartido
+con Ripley y WePlay: evita 2+ Chromium concurrentes saturando el contenedor de Railway
+(2 vCPU/1GB, ver incidencia 2026-08-15 en `fuentes.ripley.listado`).
 
 Integración más simple del proyecto: el árbol de categorías solo trae 2 nodos reales, `nike`
 (2253 productos, la tienda real) y `snkrs` (184 productos, la vitrina de lanzamientos
@@ -35,6 +43,8 @@ import json
 import logging
 import random
 import re
+
+from scrapling.fetchers import AsyncStealthySession
 
 import config
 
@@ -107,19 +117,18 @@ def _item_desde_producto(producto: dict) -> dict | None:
 
 async def _fetch_pagina(sesion, desde: int, hasta: int) -> tuple[list[dict], dict] | None:
     url = f"{_SEARCH_URL}/{_CATEGORIA}?_from={desde}&_to={hasta}"
-    respuesta = await sesion.get(url)
+    respuesta = await sesion.fetch(url)
     if respuesta.status == 400:
         return None  # tope duro de VTEX (_from > 2500) — fin de lo leíble
     if respuesta.status not in (200, 206):
         raise RuntimeError(f"HTTP {respuesta.status} en {url}")
-    productos = json.loads(respuesta.body)
+    body = respuesta.body if isinstance(respuesta.body, str) else respuesta.body.decode("utf-8", errors="replace")
+    productos = json.loads(body)
     items = [i for i in (_item_desde_producto(p) for p in productos) if i]
     return items, respuesta.headers
 
 
-async def obtener_ofertas_nike(sesion) -> tuple[list[dict], int]:
-    """Devuelve (items crudos sin duplicados, 1 si se leyó algo / 0 si no — mismo contrato que el
-    resto de fuentes.<tienda>.listado, acá con una sola categoría en vez de una lista)."""
+async def _recolectar(sesion) -> tuple[list[dict], int]:
     semaforo = asyncio.Semaphore(config.CONCURRENCIA_LISTADO)
 
     async with semaforo:
@@ -164,6 +173,24 @@ async def obtener_ofertas_nike(sesion) -> tuple[list[dict], int]:
 
     if not todos:
         log.error("Nike: no se detectó ninguna oferta en %s productos leídos", total)
+        return [], total
+    return todos, total
+
+
+async def obtener_ofertas_nike(lock_headless: asyncio.Lock) -> tuple[list[dict], int]:
+    """Devuelve (items crudos sin duplicados, 1 si se leyó algo / 0 si no — mismo contrato que el
+    resto de fuentes.<tienda>.listado, acá con una sola categoría en vez de una lista).
+
+    A diferencia de las demás fuentes VTEX (H&M/Fensa), no recibe la sesión compartida
+    (FetcherSession) — arma su propia sesión headless (AsyncStealthySession) desde que Nike
+    empezó a devolver 403 a un fetch plano (ver docstring del módulo). lock_headless
+    (compartido con Ripley/WePlay, ver main.py) evita 2+ Chromium concurrentes."""
+    async with lock_headless, AsyncStealthySession(
+        headless=True, network_idle=False, timeout=30000, max_pages=1, disable_resources=True,
+    ) as sesion:
+        todos, total = await _recolectar(sesion)
+
+    if not todos:
         return [], 0
 
     vistos: set[str] = set()
