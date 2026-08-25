@@ -80,6 +80,8 @@ def _precio_desde_variaciones(card) -> tuple[int, int] | None:
         variaciones = json.loads(html.unescape(crudo))
     except (json.JSONDecodeError, ValueError):
         return None
+    if not isinstance(variaciones, list):
+        return None
 
     mejor: tuple[int, int] | None = None
     for variacion in variaciones:
