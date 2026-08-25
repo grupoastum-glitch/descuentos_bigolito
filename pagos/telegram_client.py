@@ -110,6 +110,33 @@ async def avisar_pago(
             log.exception("Falló el aviso de pago al canal admin para %s", telegram_user_id)
 
 
+async def avisar_vencimiento_prueba(telegram_user_id: int, canal_id: str, dias_restantes: int) -> None:
+    """DM de aviso previo, exclusivo de la prueba gratis (ver pagos/db.py::listar_pruebas_por_vencer)
+    — a diferencia de una suscripción paga (cobro automático, sin aviso previo), acá si no
+    convierte a pago antes de que venza, se lo expulsa sin más avisos. Best-effort: si el DM falla
+    (nunca le escribió al bot), se loguea y sigue — no bloquea el resto de la corrida diaria."""
+    dia_o_dias = "día" if dias_restantes == 1 else "días"
+    teclado = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("Suscribirme ahora", callback_data=f"suscribirme_{canal_id}")]]
+    )
+    bot = Bot(token=config.TELEGRAM_BOT_TOKEN)
+    async with bot:
+        try:
+            await bot.send_message(
+                chat_id=telegram_user_id,
+                text=(
+                    f"🎁 Tu prueba gratis termina en {dias_restantes} {dia_o_dias}. "
+                    "Si quieres seguir recibiendo las ofertas exclusivas, suscríbete antes de que venza:"
+                ),
+                reply_markup=teclado,
+            )
+        except TelegramError:
+            log.exception(
+                "No se pudo avisar por DM a %s que su prueba gratis está por vencer (canal %s)",
+                telegram_user_id, canal_id,
+            )
+
+
 async def expulsar(telegram_user_id: int, canal_id: str) -> None:
     """Saca al usuario de cada chat que el canal pago desbloquea (ver config.CANAL_CHAT_ID) — ban
     seguido de unban inmediato por chat (equivalente a un "kick": lo saca ahora, pero no le

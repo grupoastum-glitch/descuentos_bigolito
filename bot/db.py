@@ -15,7 +15,7 @@ servicios — por eso, a diferencia del resto de este módulo, acá sí se boots
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import asyncpg
 
@@ -49,14 +49,16 @@ async def conectar(database_url: str) -> asyncpg.Pool:
 
 async def esta_activo(pool: asyncpg.Pool, telegram_user_id: int, canal_id: str) -> bool:
     """Vigente = mismo criterio que pagos/db.py::listar_vencidas: 'activa' cubre el caso normal,
-    pero 'cancelada'/'pausada' con acceso_hasta todavía en el futuro también cuentan como vigentes
-    — es el período de gracia de cancelación (ver COMPLETADO_periodo_gracia_cancelacion.md), que
-    deja al usuario con acceso hasta que vence lo ya pagado en vez de cortarlo al cancelar."""
+    'cancelada'/'pausada' con acceso_hasta todavía en el futuro también cuentan como vigentes —
+    es el período de gracia de cancelación (ver COMPLETADO_periodo_gracia_cancelacion.md), que
+    deja al usuario con acceso hasta que vence lo ya pagado en vez de cortarlo al cancelar. 'prueba'
+    (prueba gratis, ver iniciar_prueba_gratis) se trata igual: vigente hasta que vence
+    acceso_hasta, mismo mecanismo de expulsión que una suscripción paga vencida."""
     async with pool.acquire() as con:
         fila = await con.fetchrow(
             """SELECT 1 FROM suscripciones
                WHERE telegram_user_id = $1 AND canal_id = $2
-                 AND estado IN ('activa', 'cancelada', 'pausada') AND acceso_hasta > now()""",
+                 AND estado IN ('activa', 'cancelada', 'pausada', 'prueba') AND acceso_hasta > now()""",
             telegram_user_id, canal_id,
         )
     return fila is not None
@@ -75,12 +77,12 @@ async def obtener_acceso_hasta(pool: asyncpg.Pool, telegram_user_id: int, canal_
 
 async def canales_activos(pool: asyncpg.Pool, telegram_user_id: int) -> list[str]:
     """canal_id de cada suscripción vigente de este usuario (mismo criterio que esta_activo: incluye
-    el período de gracia de cancelación), o [] si no tiene ninguna."""
+    el período de gracia de cancelación y la prueba gratis), o [] si no tiene ninguna."""
     async with pool.acquire() as con:
         filas = await con.fetch(
             """SELECT canal_id FROM suscripciones
                WHERE telegram_user_id = $1
-                 AND estado IN ('activa', 'cancelada', 'pausada') AND acceso_hasta > now()""",
+                 AND estado IN ('activa', 'cancelada', 'pausada', 'prueba') AND acceso_hasta > now()""",
             telegram_user_id,
         )
     return [f["canal_id"] for f in filas]
@@ -166,3 +168,51 @@ async def leer_pausa_manual(pool: asyncpg.Pool) -> tuple[bool, datetime | None]:
     if not fila:
         return False, None
     return bool(fila["activa"]), fila["actualizado_en"]
+
+
+# duración de la prueba gratis y valor centinela de mercadopago_preapproval_id — duplicados a
+# propósito de pagos/db.py (mismos valores, mismo criterio que CANAL_CHAT_ID en bot.py): bot/ es
+# quien crea la fila de prueba (el usuario la activa charlando con el bot), pagos/ es quien la
+# expulsa al vencer (pagos/reconciliacion.py) y le manda el aviso previo.
+_DURACION_PRUEBA_GRATIS = timedelta(days=30)
+PREAPPROVAL_ID_PRUEBA_GRATIS = "TRIAL"
+
+
+async def existe_registro(pool: asyncpg.Pool, telegram_user_id: int, canal_id: str) -> bool:
+    """True si ya existe cualquier fila (pagada, vencida, expirada, en prueba) para este
+    (telegram_user_id, canal_id) — usado para decidir si ofrecer la prueba gratis: por el UNIQUE
+    de la tabla, quien ya tuvo alguna vez una fila acá no vuelve a calificar."""
+    async with pool.acquire() as con:
+        fila = await con.fetchrow(
+            "SELECT 1 FROM suscripciones WHERE telegram_user_id = $1 AND canal_id = $2",
+            telegram_user_id, canal_id,
+        )
+    return fila is not None
+
+
+async def iniciar_prueba_gratis(pool: asyncpg.Pool, telegram_user_id: int, canal_id: str) -> None:
+    """Crea la fila de prueba gratis: estado='prueba', sin preapproval real, acceso_hasta a 30 días
+    desde ahora. El caller debe haber chequeado existe_registro() antes — ON CONFLICT DO NOTHING
+    acá es solo por seguridad ante un doble clic, no reemplaza ese chequeo."""
+    ahora = datetime.now(timezone.utc)
+    async with pool.acquire() as con:
+        await con.execute(
+            """INSERT INTO suscripciones
+                   (telegram_user_id, canal_id, mercadopago_preapproval_id, estado,
+                    fecha_inicio, ultima_actualizacion, acceso_hasta)
+               VALUES ($1, $2, $3, 'prueba', $4, $4, $4 + $5::interval)
+               ON CONFLICT (telegram_user_id, canal_id) DO NOTHING""",
+            telegram_user_id, canal_id, PREAPPROVAL_ID_PRUEBA_GRATIS, ahora, _DURACION_PRUEBA_GRATIS,
+        )
+
+
+async def registrar_prueba_historial(pool: asyncpg.Pool, telegram_user_id: int, canal_id: str) -> None:
+    """Deja rastro de la activación de una prueba gratis en pagos_historial (tabla bootstrapeada
+    por pagos/db.py, ver su _DDL) con tipo='prueba' — separado de 'alta'/'renovacion' a propósito,
+    para que un futuro /stats no confunda activaciones gratis con ventas reales."""
+    async with pool.acquire() as con:
+        await con.execute(
+            """INSERT INTO pagos_historial (telegram_user_id, canal_id, tipo, monto, payer_email)
+               VALUES ($1, $2, 'prueba', 0, NULL)""",
+            telegram_user_id, canal_id,
+        )

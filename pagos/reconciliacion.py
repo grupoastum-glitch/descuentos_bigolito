@@ -1,16 +1,19 @@
 """Cron diario (Railway) — red de seguridad para cuando un webhook de MercadoPago se perdió (ej.
 el servicio de pagos estaba caído en ese momento). No es el mecanismo principal — eso es
-pagos/webhook.py, que reacciona en tiempo real; esto solo corrige drift, en tres fases:
+pagos/webhook.py, que reacciona en tiempo real; esto solo corrige drift, en cuatro fases:
 1. Reconfirma cada suscripción marcada como activa localmente contra su estado real en MercadoPago.
 2. Descubre preapprovals 'authorized' que no tengamos reflejadas como activas localmente —
    clientes nuevos o resuscripciones cuyo webhook se perdió del todo (ver
    _descubrir_preapprovals_perdidas).
-3. Expulsa a quienes su período de gracia ya venció.
+3. Avisa por DM a quienes su prueba gratis está por vencer (exclusivo de la prueba, ver
+   _avisar_pruebas_por_vencer — una suscripción paga no recibe este aviso, su cobro es automático).
+4. Expulsa a quienes su período de gracia (pago o de prueba) ya venció.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -95,6 +98,29 @@ async def _descubrir_preapprovals_perdidas(pool) -> None:
             )
 
 
+async def _avisar_pruebas_por_vencer(pool) -> None:
+    """Tercera fase: DM previo a quienes su prueba gratis está por vencer (ver
+    db.listar_pruebas_por_vencer). No tiene equivalente para suscripciones pagas — el cobro
+    recurrente de MercadoPago es automático, no hay nada que "avisar" de antemano ahí. Cada fila
+    se procesa por separado: que falle una (ej. nunca le escribió al bot) no debe impedir avisar
+    al resto ni cortar la fase de expulsión que corre después."""
+    pruebas = await db.listar_pruebas_por_vencer(pool)
+    log.info("%s pruebas gratis por vencer, mandando aviso.", len(pruebas))
+
+    for fila in pruebas:
+        dias_restantes = max((fila["acceso_hasta"] - datetime.now(timezone.utc)).days, 0) + 1
+        try:
+            await telegram_client.avisar_vencimiento_prueba(
+                fila["telegram_user_id"], fila["canal_id"], dias_restantes,
+            )
+            await db.marcar_recordatorio_prueba_enviado(pool, fila["telegram_user_id"], fila["canal_id"])
+        except Exception:
+            log.exception(
+                "Falló avisar el vencimiento de prueba de %s en canal %s",
+                fila["telegram_user_id"], fila["canal_id"],
+            )
+
+
 async def _correr() -> None:
     pool = await db.conectar()
     try:
@@ -121,11 +147,17 @@ async def _correr() -> None:
         # arriba a propósito, para aprovechar sus correcciones en este mismo run.
         await _descubrir_preapprovals_perdidas(pool)
 
-        # tercera fase: cuyo período ya pagado venció — recién acá se corta el acceso de verdad
-        # (ver PLAN_periodo_gracia_cancelacion.md). Incluye filas 'activa' cuyo cobro recurrente
-        # falló en silencio (MercadoPago sigue reintentando sin haber cambiado el status todavía),
-        # no solo cancelaciones/pausas explícitas. No requiere consultar a MercadoPago, es una
-        # comparación de fecha local.
+        # tercera fase: aviso previo a quienes su prueba gratis está por vencer — antes de la
+        # fase de expulsión a propósito, para no avisar a alguien que ya se está por expulsar en
+        # esta misma corrida (listar_pruebas_por_vencer excluye lo ya vencido, así que no se
+        # solapan de todas formas, pero el orden deja la lectura de los logs más clara).
+        await _avisar_pruebas_por_vencer(pool)
+
+        # cuarta fase: cuyo período ya pagado (o de prueba) venció — recién acá se corta el acceso
+        # de verdad (ver PLAN_periodo_gracia_cancelacion.md). Incluye filas 'activa' cuyo cobro
+        # recurrente falló en silencio (MercadoPago sigue reintentando sin haber cambiado el
+        # status todavía), no solo cancelaciones/pausas explícitas. No requiere consultar a
+        # MercadoPago, es una comparación de fecha local.
         vencidas = await db.listar_vencidas(pool)
         log.info("%s suscripciones con período de gracia vencido.", len(vencidas))
 

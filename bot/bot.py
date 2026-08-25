@@ -133,6 +133,16 @@ def teclado_inicio(config: dict) -> InlineKeyboardMarkup | None:
                 callback_data=f"suscribirme_{canal['canal_id']}",
             )]
         )
+        # debajo del botón de pago: prueba gratis de 1 mes sin tarjeta, solo para quien nunca tuvo
+        # una fila en suscripciones para este canal_id (ver cb_probar_gratis, que valida esto de
+        # nuevo al tocarlo — el botón se muestra siempre, igual que "Suscribirme" arriba, que
+        # también se muestra sin importar si el usuario ya está activo).
+        filas.append(
+            [InlineKeyboardButton(
+                "🎁 Prueba gratis por 1 mes (sin tarjeta)",
+                callback_data=f"probar_gratis_{canal['canal_id']}",
+            )]
+        )
     filas.append([InlineKeyboardButton("📡 Ver mis canales", callback_data="ver_mis_canales")])
     if contacto and contacto.get("url"):
         filas.append([InlineKeyboardButton("Háblame 💬", url=contacto["url"])])
@@ -411,6 +421,94 @@ async def cb_suscribirme(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     canal_id = query.data.removeprefix("suscribirme_")
     config = cargar_config()
     await _iniciar_suscripcion(update, context, canal_id, config)
+
+
+async def _avisar_prueba_gratis_admin(context: ContextTypes.DEFAULT_TYPE, telegram_user_id: int, canal_id: str) -> None:
+    """Avisa al canal interno de control de pagos ("Subs Bigolito💰") que se activó una prueba
+    gratis — mismo canal donde pagos/telegram_client.py::avisar_pago avisa altas/renovaciones
+    reales, para que el registro de altas quede todo junto. Opcional: si ADMIN_CHAT_ID_PAGOS no
+    está configurado (o falla el envío), solo se loguea — nunca corta la activación real del
+    usuario, que ya quedó dada antes de llamar esto."""
+    chat_id = context.bot_data.get("admin_chat_id_pagos")
+    if not chat_id:
+        return
+    try:
+        await context.bot.send_message(
+            chat_id=chat_id, text=f"🎁 Prueba gratis activada — {canal_id}\nID: {telegram_user_id}",
+        )
+    except TelegramError:
+        log.exception("Falló el aviso de prueba gratis al canal admin para %s", telegram_user_id)
+
+
+async def cb_probar_gratis(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Activa la prueba gratis de 1 mes (sin tarjeta) para el canal_id que viaja en el
+    callback_data. Solo para quien nunca tuvo una fila de suscripciones para ese canal (ni pagó
+    antes ni usó su prueba ya — ver db.existe_registro, el UNIQUE de la tabla garantiza que solo
+    puede haber una fila por persona y canal). El acceso se otorga igual que tras un pago
+    confirmado: se generan los invite links a cada chat del canal (mismo mecanismo que
+    cb_ver_mis_canales) porque todos piden aprobación (creates_join_request) y
+    cb_solicitud_union ya reconoce estado='prueba' como vigente (ver db.esta_activo)."""
+    query = update.callback_query
+    await query.answer()
+    canal_id = query.data.removeprefix("probar_gratis_")
+    config = cargar_config()
+    canal_cfg = _canales_pagos(config).get(canal_id)
+    if not canal_cfg:
+        log.warning("Intento de prueba gratis a un canal_id desconocido: %r", canal_id)
+        teclado = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")]])
+        await _mostrar(update, context, "Ese canal ya no está disponible.", teclado)
+        return
+
+    telegram_user_id = update.effective_user.id
+    pool = context.bot_data["db_pool"]
+    if await db.existe_registro(pool, telegram_user_id, canal_id):
+        texto = (
+            f"Ya usaste tu prueba gratis de {canal_cfg['nombre']} (o ya tienes/tuviste una "
+            "suscripción) — esta promo es de una sola vez por persona."
+        )
+        teclado = InlineKeyboardMarkup([
+            [InlineKeyboardButton(
+                f"Suscribirme {canal_cfg.get('nombre_corto', canal_cfg['nombre'])} 👑",
+                callback_data=f"suscribirme_{canal_id}",
+            )],
+            [InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")],
+        ])
+        await _mostrar(update, context, texto, teclado)
+        return
+
+    await db.iniciar_prueba_gratis(pool, telegram_user_id, canal_id)
+    try:
+        await db.registrar_prueba_historial(pool, telegram_user_id, canal_id)
+    except Exception:
+        # best-effort, mismo criterio que pagos/logica.py::_registrar_y_avisar_venta — el acceso ya
+        # quedó dado por iniciar_prueba_gratis, no se debe cortar el flujo por esto.
+        log.exception("Falló registrar el historial de la prueba gratis de %s", telegram_user_id)
+    await _avisar_prueba_gratis_admin(context, telegram_user_id, canal_id)
+
+    # mismo mecanismo que cb_ver_mis_canales: un invite link por chat, generado al vuelo (los
+    # chats exigen creates_join_request, así que esto no es más que la puerta de entrada — quien
+    # decide de verdad es cb_solicitud_union contra la base de datos).
+    filas = []
+    for chat_id, etiqueta in CANAL_CHAT_ID.get(canal_id, []):
+        try:
+            invite = await context.bot.create_chat_invite_link(
+                chat_id=chat_id,
+                creates_join_request=True,
+                expire_date=datetime.now(timezone.utc) + timedelta(hours=24),
+            )
+        except TelegramError:
+            log.exception(
+                "No se pudo generar invite link para la prueba gratis de %s (canal %s, chat %s)",
+                telegram_user_id, canal_id, chat_id,
+            )
+            continue
+        filas.append([InlineKeyboardButton(etiqueta, url=invite.invite_link)])
+    filas.append([InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")])
+    await _mostrar(
+        update, context,
+        "🎁 ¡Tu mes gratis empezó! Toca para entrar a cada canal (invitación válida solo para ti):",
+        InlineKeyboardMarkup(filas),
+    )
 
 
 async def _crear_preapproval(
@@ -804,6 +902,14 @@ def main() -> None:
     if not link_pago_secret:
         raise SystemExit("Falta LINK_PAGO_SECRET en bot/.env")
 
+    # canal interno de control de pagos ("Subs Bigolito💰") — duplicado a propósito de
+    # pagos/config.py::TELEGRAM_ADMIN_CHAT_ID_PAGOS (mismo criterio que CANAL_CHAT_ID). Opcional:
+    # si falta, cb_probar_gratis simplemente no manda el aviso de activación ahí (ver
+    # _avisar_prueba_gratis_admin), el bot arranca igual.
+    admin_chat_id_pagos = os.environ.get("TELEGRAM_ADMIN_CHAT_ID_PAGOS")
+    if not admin_chat_id_pagos:
+        log.warning("TELEGRAM_ADMIN_CHAT_ID_PAGOS no configurado — activaciones de prueba gratis no se avisan al canal admin.")
+
     # comandos admin-only (ver cmd_stats/cmd_pausar/cmd_reanudar/cmd_estado): a diferencia de las
     # env vars de arriba, no es fatal si falta — el bot debe seguir arrancando para los usuarios
     # reales aunque esta variable de conveniencia no esté configurada. Si falta o no es un entero
@@ -822,10 +928,12 @@ def main() -> None:
     app.bot_data["database_url"] = database_url
     app.bot_data["mp_sdk"] = mercadopago.SDK(mp_access_token)
     app.bot_data["link_pago_secret"] = link_pago_secret
+    app.bot_data["admin_chat_id_pagos"] = admin_chat_id_pagos
 
     app.add_handler(TypeHandler(Update, capturar_usuario), group=-1)
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(cb_suscribirme, pattern="^suscribirme_"))
+    app.add_handler(CallbackQueryHandler(cb_probar_gratis, pattern="^probar_gratis_"))
     app.add_handler(CallbackQueryHandler(cb_confirmar_email_vip, pattern="^confirmar_email_vip$"))
     app.add_handler(CallbackQueryHandler(cb_reescribir_email_vip, pattern="^reescribir_email_vip$"))
     app.add_handler(CallbackQueryHandler(cb_volver_menu, pattern="^volver_menu$"))

@@ -38,6 +38,11 @@ ALTER TABLE suscripciones ADD COLUMN IF NOT EXISTS ultimo_invoice_id TEXT;
 -- pedirlo en una renovación futura (ver bot/db.py::obtener_email).
 ALTER TABLE suscripciones ADD COLUMN IF NOT EXISTS payer_email TEXT;
 
+-- cuándo se mandó el DM de "tu prueba gratis está por vencer" (ver listar_pruebas_por_vencer) —
+-- NULL hasta que se manda, evita reenviarlo cada día mientras la prueba sigue en la ventana de
+-- aviso. Solo se usa para estado='prueba'; en filas pagas queda NULL siempre.
+ALTER TABLE suscripciones ADD COLUMN IF NOT EXISTS recordatorio_prueba_enviado_en TIMESTAMPTZ;
+
 -- username de Telegram de cada usuario que interactuó con el bot alguna vez (ver
 -- bot/db.py::actualizar_username, que la actualiza en cada update). Separada de suscripciones
 -- porque no todo el mundo que escribe al bot llega a pagar, y el username puede cambiar con el
@@ -253,13 +258,87 @@ async def listar_vencidas(pool: asyncpg.Pool) -> list[dict]:
     margen de _MARGEN_GRACIA_VENCIMIENTO ya descontado) y todavía no fueron expulsadas. Incluye
     'activa' a propósito: una fila activa con acceso_hasta pasado (más el margen) significa que un
     cobro recurrente falló en silencio (MercadoPago sigue reintentando sin haber cambiado el
-    status de la preapproval todavía) — no solo cancelaciones/pausas explícitas. Se incluye
-    `estado` para que el caller distinga ambos casos al marcar el resultado."""
+    status de la preapproval todavía) — no solo cancelaciones/pausas explícitas. También incluye
+    'prueba' (prueba gratis sin convertir a pago) — cae naturalmente en la rama "expirada" del
+    caller porque no es 'activa', mismo tratamiento final que una cancelación explícita. Se
+    incluye `estado` para que el caller distinga los casos al marcar el resultado."""
     async with pool.acquire() as con:
         filas = await con.fetch(
             """SELECT telegram_user_id, canal_id, estado FROM suscripciones
-               WHERE estado IN ('activa', 'cancelada', 'pausada')
+               WHERE estado IN ('activa', 'cancelada', 'pausada', 'prueba')
                  AND acceso_hasta <= now() - $1::interval""",
             _MARGEN_GRACIA_VENCIMIENTO,
         )
     return [dict(f) for f in filas]
+
+
+# duración de la prueba gratis (ver iniciar_prueba_gratis) — mismo criterio de "mes" que
+# logica.py::_periodo_de usa para frequency_type="months" (30 días).
+_DURACION_PRUEBA_GRATIS = timedelta(days=30)
+
+# valor centinela de mercadopago_preapproval_id para filas de prueba gratis: la columna es
+# NOT NULL pero una prueba no tiene preapproval real detrás. No colisiona con nada porque el
+# UNIQUE de la tabla es sobre (telegram_user_id, canal_id), no sobre esta columna. listar_activas
+# filtra por estado='activa' (nunca 'prueba'), así que este valor nunca se manda a la API de
+# MercadoPago durante la reconfirmación diaria.
+PREAPPROVAL_ID_PRUEBA_GRATIS = "TRIAL"
+
+
+async def existe_registro(pool: asyncpg.Pool, telegram_user_id: int, canal_id: str) -> bool:
+    """True si ya existe cualquier fila (activa, vencida, expirada, en prueba, lo que sea) para
+    este (telegram_user_id, canal_id) — por el UNIQUE de la tabla, solo puede existir una. Se usa
+    para decidir si ofrecer la prueba gratis: quien ya tuvo alguna vez acceso a este canal (pagado
+    o de prueba) no vuelve a calificar."""
+    async with pool.acquire() as con:
+        fila = await con.fetchrow(
+            "SELECT 1 FROM suscripciones WHERE telegram_user_id = $1 AND canal_id = $2",
+            telegram_user_id, canal_id,
+        )
+    return fila is not None
+
+
+async def iniciar_prueba_gratis(pool: asyncpg.Pool, telegram_user_id: int, canal_id: str) -> None:
+    """Crea la fila de prueba gratis: estado='prueba', sin preapproval real (ver
+    PREAPPROVAL_ID_PRUEBA_GRATIS), acceso_hasta a _DURACION_PRUEBA_GRATIS desde ahora. El caller
+    debe haber chequeado existe_registro() antes — ON CONFLICT DO NOTHING acá es solo para no
+    romper ante un doble clic simultáneo, no reemplaza ese chequeo (si ya hay fila, esta llamada
+    no hace nada y el caller ya mostró el mensaje de "ya usaste tu prueba" con la fila vieja)."""
+    ahora = datetime.now(timezone.utc)
+    async with pool.acquire() as con:
+        await con.execute(
+            """INSERT INTO suscripciones
+                   (telegram_user_id, canal_id, mercadopago_preapproval_id, estado,
+                    fecha_inicio, ultima_actualizacion, acceso_hasta)
+               VALUES ($1, $2, $3, 'prueba', $4, $4, $4 + $5::interval)
+               ON CONFLICT (telegram_user_id, canal_id) DO NOTHING""",
+            telegram_user_id, canal_id, PREAPPROVAL_ID_PRUEBA_GRATIS, ahora, _DURACION_PRUEBA_GRATIS,
+        )
+
+
+async def listar_pruebas_por_vencer(pool: asyncpg.Pool, dias_aviso: int = 3) -> list[dict]:
+    """Usado por pagos/reconciliacion.py para el aviso previo, exclusivo de la prueba gratis (a
+    diferencia de una suscripción paga, cuyo cobro es automático y no tiene aviso previo): pruebas
+    activas cuyo acceso_hasta cae dentro de los próximos `dias_aviso` días y que todavía no
+    recibieron el DM de aviso. AND acceso_hasta > now() evita avisar a una que ya venció (esa la
+    agarra listar_vencidas, no esta)."""
+    async with pool.acquire() as con:
+        filas = await con.fetch(
+            """SELECT telegram_user_id, canal_id, acceso_hasta FROM suscripciones
+               WHERE estado = 'prueba'
+                 AND recordatorio_prueba_enviado_en IS NULL
+                 AND acceso_hasta > now()
+                 AND acceso_hasta <= now() + $1::interval""",
+            timedelta(days=dias_aviso),
+        )
+    return [dict(f) for f in filas]
+
+
+async def marcar_recordatorio_prueba_enviado(pool: asyncpg.Pool, telegram_user_id: int, canal_id: str) -> None:
+    """Marca que ya se mandó el DM de aviso de vencimiento de prueba, para no repetirlo en la
+    próxima corrida diaria de reconciliacion.py."""
+    async with pool.acquire() as con:
+        await con.execute(
+            """UPDATE suscripciones SET recordatorio_prueba_enviado_en = now()
+               WHERE telegram_user_id = $1 AND canal_id = $2""",
+            telegram_user_id, canal_id,
+        )
