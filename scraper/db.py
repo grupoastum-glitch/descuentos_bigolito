@@ -70,6 +70,12 @@ CREATE TABLE IF NOT EXISTS cola_publicacion (
 
 CREATE INDEX IF NOT EXISTS ix_cola_pendiente
     ON cola_publicacion (canal, prioridad DESC, id) WHERE publicado_en IS NULL;
+
+CREATE TABLE IF NOT EXISTS pausa_manual (
+    id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    activa BOOLEAN NOT NULL DEFAULT false,
+    actualizado_en TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 _pool: asyncpg.Pool | None = None
@@ -296,3 +302,23 @@ async def limpiar_cola_publicada(pool: asyncpg.Pool, dias: int = 3) -> int:
         )
     # asyncpg devuelve algo como "DELETE 42"
     return int(resultado.split()[-1])
+
+
+async def descartar_cola_pendiente(pool: asyncpg.Pool) -> int:
+    """Borra todo lo que esté pendiente de publicar (sin marcarlo como publicado) — llamada por
+    publicar.py mientras hay una pausa activa (automática de madrugada o manual del admin, ver
+    config.en_pausa_madrugada/pausa_manual_activa): no tiene sentido mandar con horas de retraso
+    lo que se haya acumulado durante la pausa, así que se descarta en vez de guardarlo para
+    cuando termine. Devuelve cuántas filas se borraron (solo para logging)."""
+    async with pool.acquire() as con:
+        resultado = await con.execute("DELETE FROM cola_publicacion WHERE publicado_en IS NULL")
+    return int(resultado.split()[-1])
+
+
+async def pausa_manual_activa(pool: asyncpg.Pool) -> bool:
+    """Lee el flag que el admin controla desde el bot (/pausar, /reanudar — ver bot/bot.py y
+    bot/db.py::set_pausa_manual, misma tabla `pausa_manual`). False si no hay fila todavía
+    (nunca se usó /pausar)."""
+    async with pool.acquire() as con:
+        fila = await con.fetchrow("SELECT activa FROM pausa_manual WHERE id = 1")
+    return bool(fila["activa"]) if fila else False

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 # --- Fuente: Falabella Chile ---
 FALABELLA_HOME_URL = "https://www.falabella.com/falabella-cl"
@@ -52,6 +54,19 @@ TIMEOUT_TIENDA_SEGUNDOS = 1200  # 20 min — techo por tienda en main.py::_proce
 # Chromium sin completar una navegación en el contenedor, ver incidencia 2026-08-15) no debe
 # bloquear ni la publicación de las tiendas que sí terminaron ni el advisory lock de la próxima
 # corrida del cron.
+
+TZ_CHILE = ZoneInfo("America/Santiago")  # mismo patrón que bot/bot.py — usar zona horaria real
+# (no un offset UTC fijo) para no desalinearse con el horario de verano/invierno de Chile.
+HORA_INICIO_PAUSA_MADRUGADA = 1  # hora Chile [inclusive
+HORA_FIN_PAUSA_MADRUGADA = 7     # hora Chile) exclusive — ventana 01:00–07:00 sin scraping ni
+# publicación (la gente duerme, y una oferta detectada de madrugada puede quedar obsoleta para
+# cuando alguien la vea recién a la mañana). Se suma a la pausa manual del admin (ver
+# bot/bot.py: /pausar, /reanudar, /estado, y db.py::pausa_manual_activa).
+
+
+def en_pausa_madrugada() -> bool:
+    hora = datetime.now(TZ_CHILE).hour
+    return HORA_INICIO_PAUSA_MADRUGADA <= hora < HORA_FIN_PAUSA_MADRUGADA
 
 # --- Clasificación de ofertas ---
 DESCUENTO_MINIMO_WEB_PCT = 20  # piso para aparecer en el feed de la web

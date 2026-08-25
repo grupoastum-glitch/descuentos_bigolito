@@ -64,13 +64,24 @@ async def _correr() -> None:
     ultima_limpieza = datetime.now(timezone.utc)
     try:
         while True:
-            try:
-                hubo_trabajo = await _drenar_una_vez(pool)
-            except Exception:
-                # un error no anticipado (ej. problema transitorio de red/DB) no debe tumbar el
-                # proceso — es 24/7, tiene que seguir intentando en la próxima vuelta.
-                log.exception("Falló un ciclo de publicación, se reintenta en %ss", POLL_SEGUNDOS)
+            pausado = config.en_pausa_madrugada() or await db.pausa_manual_activa(pool)
+            if pausado:
+                # no se corta un envío ya en curso (este chequeo solo corre entre vueltas del
+                # loop, nunca a mitad de _drenar_una_vez) — pero no tiene sentido guardar lo
+                # pendiente para soltarlo horas después: se descarta, así lo primero que se
+                # publica al reanudar es recién scrapeado, no un backlog viejo.
+                descartadas = await db.descartar_cola_pendiente(pool)
+                if descartadas:
+                    log.info("Pausa activa: se descartaron %s ofertas que estaban en cola.", descartadas)
                 hubo_trabajo = False
+            else:
+                try:
+                    hubo_trabajo = await _drenar_una_vez(pool)
+                except Exception:
+                    # un error no anticipado (ej. problema transitorio de red/DB) no debe tumbar el
+                    # proceso — es 24/7, tiene que seguir intentando en la próxima vuelta.
+                    log.exception("Falló un ciclo de publicación, se reintenta en %ss", POLL_SEGUNDOS)
+                    hubo_trabajo = False
 
             ahora = datetime.now(timezone.utc)
             if (ahora - ultima_limpieza).total_seconds() >= LIMPIEZA_INTERVALO_HORAS * 3600:

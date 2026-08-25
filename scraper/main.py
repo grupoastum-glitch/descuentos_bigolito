@@ -511,6 +511,12 @@ async def _correr() -> None:
     if not config.DATABASE_URL:
         raise SystemExit("Falta DATABASE_URL en el entorno")
 
+    pool = await db.conectar()
+    if config.en_pausa_madrugada() or await db.pausa_manual_activa(pool):
+        log.info("En pausa (horario nocturno automático o pausa manual del admin), se omite esta corrida.")
+        await db.cerrar()
+        return
+
     await asyncio.to_thread(_diagnostico_headless)
 
     tiendas = config.tiendas_activas()
@@ -522,7 +528,6 @@ async def _correr() -> None:
     )
 
     repo_dir = git_publish.clonar_repo()
-    pool = await db.conectar()
 
     con_lock = await run_lock.adquirir_lock(pool)
     if con_lock is None:

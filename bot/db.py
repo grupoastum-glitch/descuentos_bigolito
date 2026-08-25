@@ -5,10 +5,17 @@ real de su suscripción.
 
 Excepciones a "solo lectura": actualizar_email() y actualizar_username() — ver sus docstrings.
 estadisticas() también es de solo lectura, pero contra pagos_historial (tabla nueva, ver
-pagos/db.py), no contra suscripciones."""
+pagos/db.py), no contra suscripciones.
+
+set_pausa_manual()/leer_pausa_manual() son otra excepción: la tabla `pausa_manual` (comandos
+/pausar, /reanudar, /estado en bot.py) no tiene un dueño claro como suscripciones — el bot la
+escribe, scraper/main.py y scraper/publicar.py la leen, sin orden de arranque garantizado entre
+servicios — por eso, a diferencia del resto de este módulo, acá sí se bootstrapea su esquema
+(ver conectar()), duplicado a propósito con el mismo DDL en scraper/db.py."""
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 import asyncpg
 
@@ -16,14 +23,26 @@ log = logging.getLogger("bot.db")
 
 _pool: asyncpg.Pool | None = None
 
+_DDL_PAUSA_MANUAL = """
+CREATE TABLE IF NOT EXISTS pausa_manual (
+    id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    activa BOOLEAN NOT NULL DEFAULT false,
+    actualizado_en TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+"""
+
 
 async def conectar(database_url: str) -> asyncpg.Pool:
     """Idempotente: si ya hay un pool abierto en este proceso, lo reusa. No bootstrapea el
-    esquema — si conectara antes que pagos/db.py alguna vez, esta_activo() simplemente no
-    encontraría filas, que es el comportamiento correcto (rechazar)."""
+    esquema de suscripciones/pagos_historial (esos son de pagos/db.py) — si conectara antes que
+    pagos/db.py alguna vez, esta_activo() simplemente no encontraría filas, que es el
+    comportamiento correcto (rechazar). `pausa_manual` es la excepción: no tiene un dueño único,
+    ver docstring del módulo."""
     global _pool
     if _pool is None:
         _pool = await asyncpg.create_pool(database_url, min_size=1, max_size=3)
+        async with _pool.acquire() as con:
+            await con.execute(_DDL_PAUSA_MANUAL)
         log.info("Pool de PostgreSQL conectado.")
     return _pool
 
@@ -128,3 +147,22 @@ async def estadisticas(pool: asyncpg.Pool) -> dict:
                FROM pagos_historial"""
         )
     return {"activos_ahora": activos_ahora, **dict(fila)}
+
+
+async def set_pausa_manual(pool: asyncpg.Pool, activa: bool) -> None:
+    """Escrita por /pausar y /reanudar (ver bot.py). Fila única (id=1, ver _DDL_PAUSA_MANUAL)."""
+    async with pool.acquire() as con:
+        await con.execute(
+            """INSERT INTO pausa_manual (id, activa, actualizado_en) VALUES (1, $1, now())
+               ON CONFLICT (id) DO UPDATE SET activa = EXCLUDED.activa, actualizado_en = EXCLUDED.actualizado_en""",
+            activa,
+        )
+
+
+async def leer_pausa_manual(pool: asyncpg.Pool) -> tuple[bool, datetime | None]:
+    """(activa, desde_cuándo) — para el comando /estado. (False, None) si nunca se usó /pausar."""
+    async with pool.acquire() as con:
+        fila = await con.fetchrow("SELECT activa, actualizado_en FROM pausa_manual WHERE id = 1")
+    if not fila:
+        return False, None
+    return bool(fila["activa"]), fila["actualizado_en"]

@@ -58,6 +58,10 @@ CANAL_CHAT_ID = {
     ],
     "test2": [("CAMBIAR_POR_CHAT_ID_REAL", "Canal Test 2")],  # canal de prueba, todavía no existe en Telegram
 }
+HORA_INICIO_PAUSA_MADRUGADA = 1  # duplicado a propósito de scraper/config.py (mismos valores) —
+HORA_FIN_PAUSA_MADRUGADA = 7     # bot/ y scraper/ son servicios independientes, sin imports
+# cruzados (mismo criterio que CANAL_CHAT_ID arriba) — usado solo para mostrar el estado en
+# /estado, la fuente de verdad de la pausa real la evalúa cada proceso por su cuenta.
 TZ_CHILE = ZoneInfo("America/Santiago")  # acceso_hasta se guarda en UTC — convertir antes de mostrar
 # ventana para no repetir el aviso de "solicitud aprobada" en cb_solicitud_union: un canal_id con
 # varios chats (ej. "vip" = 4) genera una solicitud de unión por chat, y el usuario suele tocar
@@ -229,6 +233,45 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"💰 Ingresos totales: {_moneda(stats['ingresos_totales'])}\n"
         f"💰 Ingresos este mes: {_moneda(stats['ingresos_mes'])}"
     )
+    await update.message.reply_text(texto)
+
+
+async def cmd_pausar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin-only (ver cmd_stats), mismo filtro. Corta scraping y publicación hasta /reanudar —
+    ver scraper/config.py::en_pausa_madrugada/db.py::pausa_manual_activa, que leen la misma
+    tabla `pausa_manual`. Sin auto-expiración a propósito: /estado deja chequear que no haya
+    quedado prendida sin querer."""
+    await db.set_pausa_manual(context.bot_data["db_pool"], True)
+    await update.message.reply_text(
+        "🔇 Pausado. No se va a scrapear ni publicar nada nuevo hasta que mandes /reanudar.\n"
+        "Lo que estaba en cola se descarta (no se manda con retraso al reanudar)."
+    )
+
+
+async def cmd_reanudar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin-only. Apaga la pausa manual — si además está dentro de la ventana automática de
+    madrugada (01:00–07:00), scraping/publicación siguen pausados hasta que termine esa
+    ventana."""
+    await db.set_pausa_manual(context.bot_data["db_pool"], False)
+    await update.message.reply_text("🔊 Reanudado (pausa manual desactivada).")
+
+
+async def cmd_estado(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin-only. Muestra el estado de las 2 pausas por separado (automática de madrugada +
+    manual del admin) — cualquiera de las dos activa implica que no se scrapea ni publica."""
+    hora_chile = datetime.now(TZ_CHILE).hour
+    en_ventana = HORA_INICIO_PAUSA_MADRUGADA <= hora_chile < HORA_FIN_PAUSA_MADRUGADA
+    manual_activa, desde = await db.leer_pausa_manual(context.bot_data["db_pool"])
+
+    texto = (
+        f"🌙 Pausa automática ({HORA_INICIO_PAUSA_MADRUGADA:02d}:00–{HORA_FIN_PAUSA_MADRUGADA:02d}:00 hora Chile): "
+        f"{'activa ahora' if en_ventana else 'inactiva ahora'}\n"
+    )
+    if manual_activa:
+        desde_txt = desde.astimezone(TZ_CHILE).strftime("%d-%m %H:%M") if desde else "?"
+        texto += f"🔇 Pausa manual: activa desde {desde_txt} — usa /reanudar para desactivarla"
+    else:
+        texto += "🔇 Pausa manual: inactiva"
     await update.message.reply_text(texto)
 
 
@@ -761,19 +804,19 @@ def main() -> None:
     if not link_pago_secret:
         raise SystemExit("Falta LINK_PAGO_SECRET en bot/.env")
 
-    # /stats (comando admin-only, ver cmd_stats): a diferencia de las env vars de arriba, no es
-    # fatal si falta — el bot debe seguir arrancando para los usuarios reales aunque esta
-    # variable de conveniencia no esté configurada. Si falta o no es un entero válido, admin_id
-    # queda en None y el CommandHandler de /stats directamente no se registra más abajo.
+    # comandos admin-only (ver cmd_stats/cmd_pausar/cmd_reanudar/cmd_estado): a diferencia de las
+    # env vars de arriba, no es fatal si falta — el bot debe seguir arrancando para los usuarios
+    # reales aunque esta variable de conveniencia no esté configurada. Si falta o no es un entero
+    # válido, admin_id queda en None y esos CommandHandler directamente no se registran más abajo.
     admin_id_str = os.environ.get("BOT_ADMIN_TELEGRAM_USER_ID")
     admin_id: int | None = None
     if admin_id_str:
         try:
             admin_id = int(admin_id_str)
         except ValueError:
-            log.warning("BOT_ADMIN_TELEGRAM_USER_ID=%r no es un entero válido — /stats deshabilitado.", admin_id_str)
+            log.warning("BOT_ADMIN_TELEGRAM_USER_ID=%r no es un entero válido — comandos admin deshabilitados.", admin_id_str)
     else:
-        log.warning("BOT_ADMIN_TELEGRAM_USER_ID no configurado — /stats deshabilitado.")
+        log.warning("BOT_ADMIN_TELEGRAM_USER_ID no configurado — comandos admin deshabilitados.")
 
     app = Application.builder().token(token).post_init(_post_init).build()
     app.bot_data["database_url"] = database_url
@@ -790,6 +833,9 @@ def main() -> None:
     app.add_handler(ChatJoinRequestHandler(cb_solicitud_union))
     if admin_id is not None:
         app.add_handler(CommandHandler("stats", cmd_stats, filters=filters.User(user_id=admin_id)))
+        app.add_handler(CommandHandler("pausar", cmd_pausar, filters=filters.User(user_id=admin_id)))
+        app.add_handler(CommandHandler("reanudar", cmd_reanudar, filters=filters.User(user_id=admin_id)))
+        app.add_handler(CommandHandler("estado", cmd_estado, filters=filters.User(user_id=admin_id)))
     app.add_handler(MessageHandler(filters.COMMAND | filters.TEXT, mensaje_no_reconocido))
     app.add_error_handler(manejar_error)
 
