@@ -572,11 +572,32 @@ async def _correr() -> None:
         # rápido antes de que el comercio lo corrija.
         extremas = [o for o in todas_candidatas if o["descuento_pct"] >= config.UMBRAL_DESCUENTO_EXTREMO]
         resto = [o for o in todas_candidatas if o["descuento_pct"] < config.UMBRAL_DESCUENTO_EXTREMO]
+
+        # dedup del aviso al admin: (a) un mismo producto puede aparecer 2 veces en extremas — una
+        # por su canal normal, otra por "ofertas_top" si también supera UMBRAL_DESCUENTO_TOP (ver
+        # ofertas_writer.procesar) — y (b) Regla 3 re-evalúa el mismo error de precio como
+        # candidata cada HORAS_REPUBLICACION_REGLA3 mientras el comercio no lo corrija. Se avisa
+        # de nuevo solo si el precio o el descuento cambiaron desde el último aviso (ver
+        # admin_alerta_precio/admin_alerta_descuento_pct en db.py) — no es supresión permanente.
+        ids_avisados_esta_corrida: set[str] = set()
+        alertas_confirmadas: list[tuple[str, int, int]] = []
         for oferta in extremas:
-            await telegram_publisher.avisar_admin(
+            if oferta["id"] in ids_avisados_esta_corrida:
+                continue
+            ya_avisado = (
+                oferta["admin_alerta_precio_previo"] == oferta["precio_actual"]
+                and oferta["admin_alerta_descuento_pct_previo"] == oferta["descuento_pct"]
+            )
+            if ya_avisado:
+                continue
+            ids_avisados_esta_corrida.add(oferta["id"])
+            enviado = await telegram_publisher.avisar_admin(
                 f"🚨 Posible error de precio: {oferta['titulo']} — {oferta['descuento_pct']}% off "
                 f"en {oferta['comercio']}. {oferta['url']}"
             )
+            if enviado:
+                alertas_confirmadas.append((oferta["id"], oferta["precio_actual"], oferta["descuento_pct"]))
+        await db.marcar_alertas_admin(pool, alertas_confirmadas)
 
         # mezcla tiendas/productos/porcentajes al azar antes de postear — si no, se nota el orden de
         # scrapeo (una tienda entera, categoría por categoría, antes de pasar a la siguiente).

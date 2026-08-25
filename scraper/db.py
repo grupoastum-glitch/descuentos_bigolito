@@ -34,6 +34,14 @@ CREATE TABLE IF NOT EXISTS productos (
     activo               BOOLEAN NOT NULL DEFAULT TRUE
 );
 
+-- Sin migraciones (ver docstring del módulo): columnas agregadas con ADD COLUMN IF NOT EXISTS,
+-- tan idempotente como el CREATE TABLE de arriba. Trackean el último precio/descuento con el que
+-- se avisó al admin de un "posible error de precio" (ver main.py, loop de `extremas`) — evita
+-- reavisar el mismo error mientras el comercio no lo corrija (Regla 3 re-evalúa el producto como
+-- candidata cada HORAS_REPUBLICACION_REGLA3 para siempre). NULL = todavía no se avisó nunca.
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS admin_alerta_precio INTEGER;
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS admin_alerta_descuento_pct INTEGER;
+
 CREATE INDEX IF NOT EXISTS ix_productos_tienda_activo
     ON productos (tienda_id, activo);
 
@@ -163,6 +171,21 @@ async def marcar_inactivos(pool: asyncpg.Pool, tienda_id: str, ids_vistos_hoy: l
             """UPDATE productos SET activo = FALSE
                WHERE tienda_id = $1 AND activo = TRUE AND NOT (id = ANY($2::text[]))""",
             tienda_id, ids_vistos_hoy,
+        )
+
+
+async def marcar_alertas_admin(pool: asyncpg.Pool, alertas: list[tuple[str, int, int]]) -> None:
+    """Registra, por producto, el precio/descuento con el que se acaba de avisar al admin de un
+    posible error de precio (ver main.py, loop de `extremas`) — así la próxima corrida puede
+    saltarse el aviso si el precio/descuento no cambió. `alertas`: lista de
+    (id, precio_actual, descuento_pct)."""
+    if not alertas:
+        return
+    async with pool.acquire() as con:
+        await con.executemany(
+            """UPDATE productos SET admin_alerta_precio = $2, admin_alerta_descuento_pct = $3
+               WHERE id = $1""",
+            alertas,
         )
 
 

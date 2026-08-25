@@ -232,6 +232,10 @@ async def procesar(pool: asyncpg.Pool, items_detectados: list[dict], tienda: con
                 "comercio": tienda.nombre,
                 "ultimo_historial_id": historial[-1]["id"] if historial else None,
                 "puede_reusar_fila": decision.puede_reusar_fila,
+                # último precio/descuento con el que se avisó al admin (ver db.marcar_alertas_admin)
+                # — usado solo por el loop de `extremas` en main.py, None si nunca se avisó.
+                "admin_alerta_precio_previo": (anterior or {}).get("admin_alerta_precio"),
+                "admin_alerta_descuento_pct_previo": (anterior or {}).get("admin_alerta_descuento_pct"),
             }
             ofertas_para_publicar.append({
                 **oferta_base,

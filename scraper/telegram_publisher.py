@@ -144,19 +144,22 @@ def _formatear_caption(oferta: dict) -> str:
     return "\n".join(lineas)[:1024]
 
 
-async def avisar_admin(mensaje: str) -> None:
+async def avisar_admin(mensaje: str) -> bool:
     """Manda un mensaje de texto plano a TELEGRAM_ADMIN_CHAT_ID (avisos operativos, no ofertas).
-    Si no está configurado, solo queda en el log — no rompe la corrida."""
+    Si no está configurado, solo queda en el log — no rompe la corrida. Devuelve True si el envío
+    se confirmó (usado por el dedup de avisos de error de precio en main.py)."""
     if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_ADMIN_CHAT_ID:
         log.warning("TELEGRAM_ADMIN_CHAT_ID no configurado, no se puede avisar: %s", mensaje)
-        return
+        return False
 
     bot = Bot(token=config.TELEGRAM_BOT_TOKEN)
     async with bot:
         try:
             await bot.send_message(chat_id=config.TELEGRAM_ADMIN_CHAT_ID, text=f"⚠️ {mensaje}")
+            return True
         except TelegramError:
             log.exception("Falló el aviso al admin: %s", mensaje)
+            return False
 
 
 async def _enviar_con_reintento(bot: Bot, chat_id: str, oferta: dict) -> bool:
