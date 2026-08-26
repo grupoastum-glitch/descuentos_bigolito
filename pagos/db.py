@@ -302,16 +302,23 @@ async def iniciar_prueba_gratis(pool: asyncpg.Pool, telegram_user_id: int, canal
     PREAPPROVAL_ID_PRUEBA_GRATIS), acceso_hasta a _DURACION_PRUEBA_GRATIS desde ahora. El caller
     debe haber chequeado existe_registro() antes — ON CONFLICT DO NOTHING acá es solo para no
     romper ante un doble clic simultáneo, no reemplaza ese chequeo (si ya hay fila, esta llamada
-    no hace nada y el caller ya mostró el mensaje de "ya usaste tu prueba" con la fila vieja)."""
+    no hace nada y el caller ya mostró el mensaje de "ya usaste tu prueba" con la fila vieja).
+
+    acceso_hasta se calcula acá en Python (no `$4 + intervalo::interval` en el SQL) porque reusar
+    el mismo parámetro $4 como timestamptz en unas columnas y dentro de una suma con interval en
+    otra le genera a asyncpg un AmbiguousParameterError ("inconsistent types deduced for
+    parameter $4: interval versus timestamp with time zone") — reproducido en vivo (mismo bug en
+    bot/db.py::iniciar_prueba_gratis) con una cuenta nueva de verdad."""
     ahora = datetime.now(timezone.utc)
+    acceso_hasta = ahora + _DURACION_PRUEBA_GRATIS
     async with pool.acquire() as con:
         await con.execute(
             """INSERT INTO suscripciones
                    (telegram_user_id, canal_id, mercadopago_preapproval_id, estado,
                     fecha_inicio, ultima_actualizacion, acceso_hasta)
-               VALUES ($1, $2, $3, 'prueba', $4, $4, $4 + $5::interval)
+               VALUES ($1, $2, $3, 'prueba', $4, $4, $5)
                ON CONFLICT (telegram_user_id, canal_id) DO NOTHING""",
-            telegram_user_id, canal_id, PREAPPROVAL_ID_PRUEBA_GRATIS, ahora, _DURACION_PRUEBA_GRATIS,
+            telegram_user_id, canal_id, PREAPPROVAL_ID_PRUEBA_GRATIS, ahora, acceso_hasta,
         )
 
 
