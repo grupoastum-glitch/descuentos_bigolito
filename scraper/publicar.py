@@ -29,10 +29,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("scraper.publicar")
 
 POLL_SEGUNDOS = 15  # espera entre chequeos de la cola cuando está vacía
-LIMPIEZA_INTERVALO_HORAS = 5  # cada cuánto se corre db.limpiar_cola_publicada — antes 6h/24h,
-# bajado de nuevo para acotar aún más el peor caso de filas publicadas viviendo en la tabla
-# (sesión 2026-08-20, cola_publicacion llegó a 115MB/106k filas)
-LIMPIEZA_RETENCION_DIAS = 0.5  # filas ya publicadas más viejas que esto se borran — antes 1 día (12h)
+LIMPIEZA_INTERVALO_HORAS = 1  # cada cuánto se corre db.limpiar_cola_publicada — antes 5h/6h/24h.
+# Bajado a 1h junto con la retención (ver LIMPIEZA_RETENCION_DIAS): nada en el código lee filas ya
+# publicadas (el único SELECT de cola_publicacion filtra publicado_en IS NULL) — el evento real
+# vive en historial_precios — así que no hay ninguna razón funcional para retenerlas más que un
+# rato corto para poder mirarlas a mano en la consola de Railway si hace falta debuggear algo
+# (sesión 2026-08-25). El intervalo tiene que ser <= la retención, si no las filas se siguen
+# acumulando entre limpiezas sin que la retención más chica se note.
+LIMPIEZA_RETENCION_DIAS = 2 / 24  # 2 horas — filas ya publicadas más viejas que esto se borran
 
 
 async def _drenar_una_vez(pool) -> bool:
