@@ -423,19 +423,32 @@ async def cb_suscribirme(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await _iniciar_suscripcion(update, context, canal_id, config)
 
 
-async def _avisar_prueba_gratis_admin(context: ContextTypes.DEFAULT_TYPE, telegram_user_id: int, canal_id: str) -> None:
+async def _avisar_prueba_gratis_admin(
+    context: ContextTypes.DEFAULT_TYPE,
+    telegram_user_id: int,
+    username: str | None,
+    canal_id: str,
+    acceso_hasta,
+) -> None:
     """Avisa al canal interno de control de pagos ("Subs Bigolito💰") que se activó una prueba
     gratis — mismo canal donde pagos/telegram_client.py::avisar_pago avisa altas/renovaciones
-    reales, para que el registro de altas quede todo junto. Opcional: si ADMIN_CHAT_ID_PAGOS no
+    reales, mismo formato (ID + Username), para que el registro de altas quede todo junto y sea
+    igual de fácil de leer. Sin Email/Monto (no aplican, no hay tarjeta ni cobro en la prueba) —
+    en su lugar "Vence", el dato que de verdad importa acá. Opcional: si ADMIN_CHAT_ID_PAGOS no
     está configurado (o falla el envío), solo se loguea — nunca corta la activación real del
     usuario, que ya quedó dada antes de llamar esto."""
     chat_id = context.bot_data.get("admin_chat_id_pagos")
     if not chat_id:
         return
+    fecha_vence = acceso_hasta.astimezone(TZ_CHILE).strftime("%d/%m/%Y")
+    texto = (
+        f"🎁 Prueba gratis activada — {canal_id}\n"
+        f"ID: {telegram_user_id}\n"
+        f"Username: {'@' + username if username else 'sin username'}\n"
+        f"Vence: {fecha_vence}"
+    )
     try:
-        await context.bot.send_message(
-            chat_id=chat_id, text=f"🎁 Prueba gratis activada — {canal_id}\nID: {telegram_user_id}",
-        )
+        await context.bot.send_message(chat_id=chat_id, text=texto)
     except TelegramError:
         log.exception("Falló el aviso de prueba gratis al canal admin para %s", telegram_user_id)
 
@@ -483,7 +496,10 @@ async def cb_probar_gratis(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         # best-effort, mismo criterio que pagos/logica.py::_registrar_y_avisar_venta — el acceso ya
         # quedó dado por iniciar_prueba_gratis, no se debe cortar el flujo por esto.
         log.exception("Falló registrar el historial de la prueba gratis de %s", telegram_user_id)
-    await _avisar_prueba_gratis_admin(context, telegram_user_id, canal_id)
+    acceso_hasta = await db.obtener_acceso_hasta(pool, telegram_user_id, canal_id)
+    await _avisar_prueba_gratis_admin(
+        context, telegram_user_id, update.effective_user.username, canal_id, acceso_hasta,
+    )
 
     # mismo mecanismo que cb_ver_mis_canales: un invite link por chat, generado al vuelo (los
     # chats exigen creates_join_request, así que esto no es más que la puerta de entrada — quien
