@@ -116,9 +116,13 @@ async def avisar_vencimiento_prueba(telegram_user_id: int, canal_id: str, dias_r
     convierte a pago antes de que venza, se lo expulsa sin más avisos. Best-effort: si el DM falla
     (nunca le escribió al bot), se loguea y sigue — no bloquea el resto de la corrida diaria."""
     dia_o_dias = "día" if dias_restantes == 1 else "días"
-    teclado = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("Suscribirme ahora", callback_data=f"suscribirme_{canal_id}")]]
-    )
+    # "⬅️ Volver al menú" en la segunda fila: mismo criterio que el resto de los mensajes del bot
+    # (ver invitar()/expulsar() más abajo) — lo captura bot/bot.py::cb_volver_menu sin importar
+    # que este mensaje lo haya mandado el servicio de pagos.
+    teclado = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Suscribirme ahora", callback_data=f"suscribirme_{canal_id}")],
+        [InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")],
+    ])
     bot = Bot(token=config.TELEGRAM_BOT_TOKEN)
     async with bot:
         try:
@@ -166,9 +170,10 @@ async def expulsar(telegram_user_id: int, canal_id: str) -> None:
             return  # no se pudo expulsar de ningún chat, no tiene sentido avisar que se expulsó
 
         try:
-            teclado = InlineKeyboardMarkup(
-                [[InlineKeyboardButton("Renovar suscripción", callback_data=f"suscribirme_{canal_id}")]]
-            )
+            teclado = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Renovar suscripción", callback_data=f"suscribirme_{canal_id}")],
+                [InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")],
+            ])
             await bot.send_message(
                 chat_id=telegram_user_id,
                 text=(
