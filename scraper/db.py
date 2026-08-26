@@ -170,13 +170,19 @@ async def upsert_productos(pool: asyncpg.Pool, registros: list[dict]) -> None:
         )
 
 
-async def marcar_inactivos(pool: asyncpg.Pool, tienda_id: str, ids_vistos_hoy: list[str]) -> None:
-    """Equivalente al loop de antes que ponía activo=False a lo que no está en ids_vistos_hoy."""
+async def marcar_inactivos(
+    pool: asyncpg.Pool, tienda_id: str, ids_vistos_hoy: list[str], gracia_horas: int
+) -> None:
+    """Marca activo=FALSE solo a productos no vistos en esta corrida Y con ultima_actualizacion
+    más vieja que `gracia_horas` — ver config.GRACIA_INACTIVO_HORAS. Sin el período de gracia,
+    tiendas que escanean su catálogo por muestreo (no completo cada corrida) marcarían inactivos
+    productos que siguen vigentes, solo porque no tocó el sorteo esa corrida."""
     async with pool.acquire() as con:
         await con.execute(
             """UPDATE productos SET activo = FALSE
-               WHERE tienda_id = $1 AND activo = TRUE AND NOT (id = ANY($2::text[]))""",
-            tienda_id, ids_vistos_hoy,
+               WHERE tienda_id = $1 AND activo = TRUE AND NOT (id = ANY($2::text[]))
+                 AND ultima_actualizacion < now() - ($3 || ' hours')::interval""",
+            tienda_id, ids_vistos_hoy, str(gracia_horas),
         )
 
 

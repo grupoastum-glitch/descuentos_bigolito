@@ -247,7 +247,7 @@ async def procesar(pool: asyncpg.Pool, items_detectados: list[dict], tienda: con
                 ofertas_para_publicar.append({**oferta_base, "canal": "ofertas_top"})
 
     await db.upsert_productos(pool, registros_a_upsertear)
-    await db.marcar_inactivos(pool, tienda.id, claves)
+    await db.marcar_inactivos(pool, tienda.id, claves, config.GRACIA_INACTIVO_HORAS)
 
     log.info(
         "%s: %s productos tocados. %s candidatas a publicar en Telegram.",

@@ -148,6 +148,17 @@ HORAS_REPUBLICACION_REGLA3 = 6
 # candidatas que exceden el tope no se pierden, quedan disponibles en la próxima corrida.
 MAX_REGLA3_POR_TIENDA_POR_CORRIDA = 400
 
+# Días de gracia antes de marcar un producto activo=FALSE cuando no aparece en una corrida —
+# necesario porque varias tiendas (fal, sodimac, easy, abc, hites, pethome, spdigital,
+# pcfactory, novapet) escanean su catálogo por MUESTREO parcial (no todo el catálogo cada
+# corrida), así que "no visto esta corrida" no significa "ya no se vende", solo que no tocó el
+# sorteo. Corridas cada 3 horas → 14 días = ~112 intentos, da margen de sobra incluso para la
+# tienda con peor cobertura medida (hites, ~7% de categorías por corrida): probabilidad de nunca
+# resortear en 14 días ≈ 0.02%. Sesión 2026-08-25: confirmado con datos reales que el 96% de los
+# 122k productos "inactivos" está en las tiendas con muestreo, y las tiendas sin muestreo
+# (xiaomi/hm/gympro) tienen ~0% inactivo.
+GRACIA_INACTIVO_HORAS = 336  # 14 días
+
 # Destino de Telegram por canal (el bot debe ser admin ahí con permiso "Publicar mensajes"):
 # @username para un canal público, o chat_id numérico (siempre negativo, ej. "-1004438197572")
 # para uno privado — canal_para_descuento() no distingue, telegram_publisher.py sí, al armar el
