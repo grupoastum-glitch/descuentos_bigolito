@@ -274,6 +274,9 @@ SOICOS_DEEPLINK_TEMPLATES: dict[str, str] = {
     "Paris": "https://ad.soicos.com/sclick?aid=56144&pid=10032&dl={url}",
     "Easy": "https://ad.soicos.com/sclick?aid=56144&pid=14089&dl={url}",
     "ABC": "https://ad.soicos.com/sclick?aid=56144&pid=9902&dl={url}",
+    "Caterpillar": "https://ad.soicos.com/sclick?aid=56144&pid=13335&dl={url}",
+    "Nike": "https://ad.soicos.com/sclick?aid=56144&pid=14271&dl={url}",
+    "Fensa": "https://ad.soicos.com/sclick?aid=56144&pid=11307&dl={url}",
 }
 
 
