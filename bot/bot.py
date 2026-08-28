@@ -124,8 +124,10 @@ def _moneda(monto: int) -> str:
     return f"${monto:,}".replace(",", ".")
 
 
-def teclado_inicio(config: dict) -> InlineKeyboardMarkup | None:
-    """Menú de botones del /start: canales de ofertas, canales pagos visibles y contacto."""
+async def teclado_inicio(config: dict, pool) -> InlineKeyboardMarkup | None:
+    """Menú de botones del /start: canales de ofertas, canales pagos visibles y contacto. Necesita
+    `pool` para mostrar en el botón de un canal con `tramos` el precio real del tramo vigente
+    (mismo cálculo que texto_bienvenida — ver ese docstring)."""
     ofertas = [c for c in config["canales"] if c.get("tipo", "oferta") == "oferta"]
     contacto = config.get("contacto")
 
@@ -141,9 +143,14 @@ def teclado_inicio(config: dict) -> InlineKeyboardMarkup | None:
         # directo al canal, que exige creates_join_request y rechazaría a cualquiera sin
         # suscripción activa (ver cb_solicitud_union). La web tiene su propio botón fijo para el
         # VIP (clave "vip" de config.json) que apunta al bot, mismo flujo.
+        etiqueta_precio = ""
+        if canal.get("tramos"):
+            cantidad = await db.contar_precios_congelados(pool, canal["canal_id"])
+            precio_actual = precios.calcular_precio_tramo(canal, cantidad)
+            etiqueta_precio = f" ({_moneda(precio_actual)}/mes)"
         filas.append(
             [InlineKeyboardButton(
-                f"Suscribirme {canal.get('nombre_corto', canal['nombre'])} 👑",
+                f"Suscribirme {canal.get('nombre_corto', canal['nombre'])} 👑{etiqueta_precio}",
                 callback_data=f"suscribirme_{canal['canal_id']}",
             )]
         )
@@ -192,9 +199,11 @@ async def texto_bienvenida(config: dict, pool) -> str:
                 cantidad = await db.contar_precios_congelados(pool, canal["canal_id"])
                 precio_actual = precios.calcular_precio_tramo(canal, cantidad)
                 texto += (
-                    f"\n💰 Ahora mismo: {_moneda(precio_actual)}/mes — sube pronto. El precio que "
-                    "pagues queda fijo para ti de por vida."
+                    f"\n\n💰 Ahora mismo: {_moneda(precio_actual)}/mes — sube pronto.\n"
+                    "*El precio que pagues queda fijo para ti de por vida.*"
                 )
+            if canal.get("canales_incluidos"):
+                texto += "\n"
             for nombre_canal in canal.get("canales_incluidos") or []:
                 texto += f"\n• {nombre_canal}"
             if canal.get("nota"):
@@ -473,7 +482,7 @@ async def cb_menu_desde_broadcast(update: Update, context: ContextTypes.DEFAULT_
         chat_id=update.effective_chat.id,
         text=await texto_bienvenida(config, context.bot_data["db_pool"]),
         parse_mode="Markdown",
-        reply_markup=teclado_inicio(config),
+        reply_markup=await teclado_inicio(config, context.bot_data["db_pool"]),
     )
     context.user_data["menu_msg_id"] = nuevo.message_id
 
@@ -488,7 +497,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await _iniciar_suscripcion(update, context, canal_id, config)
         return
     texto = await texto_bienvenida(config, context.bot_data["db_pool"])
-    await _mostrar(update, context, texto, teclado_inicio(config))
+    teclado = await teclado_inicio(config, context.bot_data["db_pool"])
+    await _mostrar(update, context, texto, teclado)
 
 
 async def cb_volver_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -505,7 +515,8 @@ async def cb_volver_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     context.user_data.pop("broadcast_origen", None)
     config = cargar_config()
     texto = await texto_bienvenida(config, context.bot_data["db_pool"])
-    await _mostrar(update, context, texto, teclado_inicio(config))
+    teclado = await teclado_inicio(config, context.bot_data["db_pool"])
+    await _mostrar(update, context, texto, teclado)
 
 
 async def cb_ver_mis_canales(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
