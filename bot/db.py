@@ -205,7 +205,7 @@ async def leer_pausa_manual(pool: asyncpg.Pool) -> tuple[bool, datetime | None]:
 # propósito de pagos/db.py (mismos valores, mismo criterio que CANAL_CHAT_ID en bot.py): bot/ es
 # quien crea la fila de prueba (el usuario la activa charlando con el bot), pagos/ es quien la
 # expulsa al vencer (pagos/reconciliacion.py) y le manda el aviso previo.
-_DURACION_PRUEBA_GRATIS = timedelta(days=30)
+_DURACION_PRUEBA_GRATIS = timedelta(days=15)
 PREAPPROVAL_ID_PRUEBA_GRATIS = "TRIAL"
 
 

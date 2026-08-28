@@ -311,9 +311,9 @@ async def listar_vencidas(pool: asyncpg.Pool) -> list[dict]:
     return [dict(f) for f in filas]
 
 
-# duración de la prueba gratis (ver iniciar_prueba_gratis) — mismo criterio de "mes" que
-# logica.py::_periodo_de usa para frequency_type="months" (30 días).
-_DURACION_PRUEBA_GRATIS = timedelta(days=30)
+# duración de la prueba gratis (ver iniciar_prueba_gratis) — duplicado a propósito de
+# bot/db.py, que es la copia realmente usada (ver su docstring).
+_DURACION_PRUEBA_GRATIS = timedelta(days=15)
 
 # valor centinela de mercadopago_preapproval_id para filas de prueba gratis: la columna es
 # NOT NULL pero una prueba no tiene preapproval real detrás. No colisiona con nada porque el
