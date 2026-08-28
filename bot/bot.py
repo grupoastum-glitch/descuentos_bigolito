@@ -41,6 +41,10 @@ RUTA_CONFIG = Path(__file__).resolve().parent.parent / "web" / "data" / "config.
 
 BROADCAST_DELAY_SEGUNDOS = 0.05  # throttle entre envíos individuales de /broadcast (~20/seg)
 
+TECLADO_BROADCAST = InlineKeyboardMarkup(
+    [[InlineKeyboardButton("⬅️ Volver al menú", callback_data="menu_desde_broadcast")]]
+)
+
 # chat_id(s) por canal pago — duplicado a propósito de pagos/config.py::CANAL_CHAT_ID:
 # bot/ y pagos/ son servicios independientes (containers separados, sin imports cruzados), mismo
 # criterio de "cada uno autocontenido" que ya usa el resto del proyecto. Cada canal_id mapea a una
@@ -326,13 +330,19 @@ async def capturar_broadcast_contenido(update: Update, context: ContextTypes.DEF
     origen_message_id = update.effective_message.message_id
 
     if modo == "test":
-        await context.bot.copy_message(chat_id=origen_chat_id, from_chat_id=origen_chat_id, message_id=origen_message_id)
+        await context.bot.copy_message(
+            chat_id=origen_chat_id, from_chat_id=origen_chat_id, message_id=origen_message_id,
+            reply_markup=TECLADO_BROADCAST,
+        )
         await update.effective_message.reply_text("✅ Así se vería (enviado solo a ti, no se difundió a nadie más).")
         return
 
     context.user_data["broadcast_origen"] = {"chat_id": origen_chat_id, "message_id": origen_message_id}
     destinatarios = await db.listar_telegram_user_ids(context.bot_data["db_pool"])
-    await context.bot.copy_message(chat_id=origen_chat_id, from_chat_id=origen_chat_id, message_id=origen_message_id)
+    await context.bot.copy_message(
+        chat_id=origen_chat_id, from_chat_id=origen_chat_id, message_id=origen_message_id,
+        reply_markup=TECLADO_BROADCAST,
+    )
     teclado = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Confirmar envío", callback_data="confirmar_broadcast")],
         [InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")],
@@ -367,6 +377,7 @@ async def cb_confirmar_broadcast(update: Update, context: ContextTypes.DEFAULT_T
         try:
             await context.bot.copy_message(
                 chat_id=telegram_user_id, from_chat_id=origen["chat_id"], message_id=origen["message_id"],
+                reply_markup=TECLADO_BROADCAST,
             )
             enviados += 1
         except RetryAfter as error:
@@ -374,6 +385,7 @@ async def cb_confirmar_broadcast(update: Update, context: ContextTypes.DEFAULT_T
             try:
                 await context.bot.copy_message(
                     chat_id=telegram_user_id, from_chat_id=origen["chat_id"], message_id=origen["message_id"],
+                    reply_markup=TECLADO_BROADCAST,
                 )
                 enviados += 1
             except TelegramError:
@@ -392,6 +404,20 @@ async def cb_confirmar_broadcast(update: Update, context: ContextTypes.DEFAULT_T
             f"{fallidos} fallaron por otro motivo."
         ),
     )
+
+
+async def cb_menu_desde_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Botón "⬅️ Volver al menú" del mensaje difundido por /broadcast. A diferencia de
+    cb_volver_menu, NO edita el mensaje que tiene el botón — ese mensaje es el anuncio difundido,
+    editarlo lo reemplazaría por el menú y se perdería. Manda el menú como mensaje aparte."""
+    query = update.callback_query
+    await query.answer()
+    config = cargar_config()
+    nuevo = await context.bot.send_message(
+        chat_id=update.effective_chat.id, text=texto_bienvenida(config), parse_mode="Markdown",
+        reply_markup=teclado_inicio(config),
+    )
+    context.user_data["menu_msg_id"] = nuevo.message_id
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1067,6 +1093,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(cb_volver_menu, pattern="^volver_menu$"))
     app.add_handler(CallbackQueryHandler(cb_ver_mis_canales, pattern="^ver_mis_canales$"))
     app.add_handler(CallbackQueryHandler(cb_confirmar_broadcast, pattern="^confirmar_broadcast$"))
+    app.add_handler(CallbackQueryHandler(cb_menu_desde_broadcast, pattern="^menu_desde_broadcast$"))
     app.add_handler(ChatJoinRequestHandler(cb_solicitud_union))
     if admin_id is not None:
         app.bot_data["admin_id"] = admin_id
