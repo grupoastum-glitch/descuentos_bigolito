@@ -119,6 +119,9 @@ def teclado_inicio(config: dict) -> InlineKeyboardMarkup | None:
     contacto = config.get("contacto")
 
     filas = [[InlineKeyboardButton(c["nombre"], url=c["url"])] for c in ofertas if c.get("url")]
+    chat_general = config.get("chat_general")
+    if chat_general and chat_general.get("url"):
+        filas.append([InlineKeyboardButton(chat_general["nombre"], url=chat_general["url"])])
     for canal in config.get("canales_pagos") or []:
         if not canal.get("visible", True):
             continue

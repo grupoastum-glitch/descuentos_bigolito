@@ -54,6 +54,10 @@
     "nombre": "Soporte",
     "url": "https://t.me/nicolass94588"
   },
+  "chat_general": {
+    "nombre": "Chat General",
+    "url": "https://t.me/chat_bigolito"
+  },
   "bot": {
     "descripcion_larga": "🐶 ¡Guau! Soy Bigolito, el beagle cazador de descuentos. Olfateo las mejores ofertas de Chile antes que nadie y te las traigo directo a Telegram.\n\nEscribe /start para empezar a ahorrar.",
     "descripcion_corta": "Bot oficial de Descuentos Bigolito 🐶 — descubre las ofertas antes que tú.",
