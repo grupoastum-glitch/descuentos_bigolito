@@ -26,7 +26,7 @@
       "canal_id": "vip",
       "nombre": "Descuentos VIP",
       "nombre_corto": "VIP",
-      "descripcion": "Accede a varios canales VIP con descuentos del 50% y más. El precio sube a medida que se suman más suscriptores, pero el que pagues vos queda fijo para siempre.",
+      "descripcion": "Accede a varios canales VIP con descuentos del 50% y más.",
       "canales_incluidos": ["Retail VIP 💎", "Geek VIP 🕹️", "Deco/Hogar VIP 🏠", "Tech VIP 🖥", "Mascotas VIP 🐶🐱", "Fitness VIP 🏋️", "+80% OFF VIP 🔥"],
       "nota": "Pago seguro con MercadoPago, cancelas cuando quieras.",
       "tramos": [

@@ -163,9 +163,11 @@ def teclado_inicio(config: dict) -> InlineKeyboardMarkup | None:
     return InlineKeyboardMarkup(filas) if filas else None
 
 
-def texto_bienvenida(config: dict) -> str:
+async def texto_bienvenida(config: dict, pool) -> str:
     """Saludo del /start — incluye directo la explicación de los niveles (gratis + pagos) y el
-    pago, para no depender de un botón "Información" aparte que solo agregaba un tap extra."""
+    pago, para no depender de un botón "Información" aparte que solo agregaba un tap extra.
+    Necesita `pool` (a diferencia de antes) para consultar en vivo el precio del tramo vigente de
+    los canales pagos con escalamiento — ver el bloque de `tramos` más abajo."""
     marca = config["marca"]
     nombre = " ".join(filter(None, [marca.get("nombre"), marca.get("emoji")]))
     texto = f"{marca.get('saludo', '')}\n\nSoy el bot de *{nombre}*. {marca.get('descripcion', '')}"
@@ -182,6 +184,17 @@ def texto_bienvenida(config: dict) -> str:
             continue
         if canal.get("descripcion"):
             texto += f"\n\n*{canal['descripcion']}*"
+            if canal.get("tramos"):
+                # FOMO con el precio real del tramo vigente (no un número fijo en config.json) —
+                # mismo cálculo que usa cb_suscribirme antes de cobrar, así que siempre coincide
+                # con lo que la persona termina pagando. Sin mostrar cupos restantes ni cantidad
+                # de suscriptores, a pedido del usuario.
+                cantidad = await db.contar_precios_congelados(pool, canal["canal_id"])
+                precio_actual = precios.calcular_precio_tramo(canal, cantidad)
+                texto += (
+                    f"\n💰 Ahora mismo: {_moneda(precio_actual)}/mes — sube pronto. El precio que "
+                    "pagues queda fijo para ti de por vida."
+                )
             for nombre_canal in canal.get("canales_incluidos") or []:
                 texto += f"\n• {nombre_canal}"
             if canal.get("nota"):
@@ -457,7 +470,9 @@ async def cb_menu_desde_broadcast(update: Update, context: ContextTypes.DEFAULT_
     await query.answer()
     config = cargar_config()
     nuevo = await context.bot.send_message(
-        chat_id=update.effective_chat.id, text=texto_bienvenida(config), parse_mode="Markdown",
+        chat_id=update.effective_chat.id,
+        text=await texto_bienvenida(config, context.bot_data["db_pool"]),
+        parse_mode="Markdown",
         reply_markup=teclado_inicio(config),
     )
     context.user_data["menu_msg_id"] = nuevo.message_id
@@ -472,7 +487,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         canal_id = context.args[0].removeprefix("sus_")
         await _iniciar_suscripcion(update, context, canal_id, config)
         return
-    await _mostrar(update, context, texto_bienvenida(config), teclado_inicio(config))
+    texto = await texto_bienvenida(config, context.bot_data["db_pool"])
+    await _mostrar(update, context, texto, teclado_inicio(config))
 
 
 async def cb_volver_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -488,7 +504,8 @@ async def cb_volver_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     context.user_data.pop("broadcast_modo", None)
     context.user_data.pop("broadcast_origen", None)
     config = cargar_config()
-    await _mostrar(update, context, texto_bienvenida(config), teclado_inicio(config))
+    texto = await texto_bienvenida(config, context.bot_data["db_pool"])
+    await _mostrar(update, context, texto, teclado_inicio(config))
 
 
 async def cb_ver_mis_canales(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
