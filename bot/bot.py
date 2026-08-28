@@ -1157,7 +1157,7 @@ def main() -> None:
     app.bot_data["admin_chat_id_pagos"] = admin_chat_id_pagos
 
     app.add_handler(TypeHandler(Update, capturar_usuario), group=-1)
-    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("start", cmd_start, filters=filters.ChatType.PRIVATE))
     app.add_handler(CallbackQueryHandler(cb_suscribirme, pattern="^suscribirme_"))
     app.add_handler(CallbackQueryHandler(cb_probar_gratis, pattern="^probar_gratis_"))
     app.add_handler(CallbackQueryHandler(cb_confirmar_email_vip, pattern="^confirmar_email_vip$"))
@@ -1169,15 +1169,19 @@ def main() -> None:
     app.add_handler(ChatJoinRequestHandler(cb_solicitud_union))
     if admin_id is not None:
         app.bot_data["admin_id"] = admin_id
-        app.add_handler(CommandHandler("stats", cmd_stats, filters=filters.User(user_id=admin_id)))
-        app.add_handler(CommandHandler("pausar", cmd_pausar, filters=filters.User(user_id=admin_id)))
-        app.add_handler(CommandHandler("reanudar", cmd_reanudar, filters=filters.User(user_id=admin_id)))
-        app.add_handler(CommandHandler("estado", cmd_estado, filters=filters.User(user_id=admin_id)))
-        app.add_handler(CommandHandler("broadcast", cmd_broadcast, filters=filters.User(user_id=admin_id)))
+        filtro_admin_privado = filters.ChatType.PRIVATE & filters.User(user_id=admin_id)
+        app.add_handler(CommandHandler("stats", cmd_stats, filters=filtro_admin_privado))
+        app.add_handler(CommandHandler("pausar", cmd_pausar, filters=filtro_admin_privado))
+        app.add_handler(CommandHandler("reanudar", cmd_reanudar, filters=filtro_admin_privado))
+        app.add_handler(CommandHandler("estado", cmd_estado, filters=filtro_admin_privado))
+        app.add_handler(CommandHandler("broadcast", cmd_broadcast, filters=filtro_admin_privado))
         app.add_handler(MessageHandler(
-            filters.User(user_id=admin_id) & ~filters.COMMAND, capturar_broadcast_contenido,
+            filters.ChatType.PRIVATE & filters.User(user_id=admin_id) & ~filters.COMMAND,
+            capturar_broadcast_contenido,
         ))
-    app.add_handler(MessageHandler(filters.COMMAND | filters.TEXT, mensaje_no_reconocido))
+    app.add_handler(MessageHandler(
+        filters.ChatType.PRIVATE & (filters.COMMAND | filters.TEXT), mensaje_no_reconocido,
+    ))
     app.add_error_handler(manejar_error)
 
     log.info("Bot arrancando (polling)...")
