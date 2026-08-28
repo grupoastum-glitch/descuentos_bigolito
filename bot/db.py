@@ -130,6 +130,14 @@ async def actualizar_username(pool: asyncpg.Pool, telegram_user_id: int, usernam
         )
 
 
+async def listar_telegram_user_ids(pool: asyncpg.Pool) -> list[int]:
+    """Todos los telegram_user_id que alguna vez interactuaron con el bot (ver
+    bot.py::capturar_usuario) — usado por /broadcast para saber a quién avisar."""
+    async with pool.acquire() as con:
+        filas = await con.fetch("SELECT telegram_user_id FROM telegram_usuarios")
+        return [f["telegram_user_id"] for f in filas]
+
+
 async def estadisticas(pool: asyncpg.Pool) -> dict:
     """Resumen histórico de ventas para el comando /stats admin-only (ver bot.py::cmd_stats).
     Dos queries porque activos_ahora sale de suscripciones (estado actual) y el resto de

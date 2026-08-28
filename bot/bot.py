@@ -22,7 +22,7 @@ import mercadopago
 from dotenv import load_dotenv
 from mercadopago.errors.exceptions import MPServerError
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.error import BadRequest, Conflict, TelegramError
+from telegram.error import BadRequest, Conflict, Forbidden, RetryAfter, TelegramError
 from telegram.helpers import escape_markdown
 from telegram.ext import (
     Application,
@@ -38,6 +38,8 @@ from telegram.ext import (
 import db
 
 RUTA_CONFIG = Path(__file__).resolve().parent.parent / "web" / "data" / "config.json"
+
+BROADCAST_DELAY_SEGUNDOS = 0.05  # throttle entre envíos individuales de /broadcast (~20/seg)
 
 # chat_id(s) por canal pago — duplicado a propósito de pagos/config.py::CANAL_CHAT_ID:
 # bot/ y pagos/ son servicios independientes (containers separados, sin imports cruzados), mismo
@@ -288,6 +290,110 @@ async def cmd_estado(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await update.message.reply_text(texto)
 
 
+async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin-only (ver cmd_stats). Arranca el flujo de difusión masiva: `/broadcast test` manda el
+    siguiente mensaje que escriba el admin solo a él mismo (para previsualizar); `/broadcast` a
+    secas lo manda, tras confirmar, a todos los telegram_user_id de la tabla telegram_usuarios
+    (cualquiera que haya interactuado con el bot alguna vez, no solo suscriptores — ver
+    db.py::listar_telegram_user_ids). El contenido se captura en el próximo mensaje del admin, no
+    acá (ver capturar_broadcast_contenido) — así admite texto o foto sin duplicar lógica."""
+    modo = "test" if context.args and context.args[0] == "test" else "real"
+    context.user_data["broadcast_modo"] = modo
+    context.user_data["esperando_broadcast_contenido"] = True
+    teclado = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")]])
+    if modo == "test":
+        texto = "Mándame el mensaje (texto o foto) que quieres previsualizar — te lo voy a mandar solo a ti."
+    else:
+        texto = (
+            "Mándame el mensaje (texto o foto) que quieres difundir a todos los que alguna vez "
+            "escribieron al bot. Antes de mandarlo te voy a pedir confirmación."
+        )
+    await update.message.reply_text(texto, reply_markup=teclado)
+
+
+async def capturar_broadcast_contenido(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Captura el mensaje (texto o foto) que el admin manda después de /broadcast o
+    /broadcast test — ver cmd_broadcast. Solo se registra para el admin (filters.User) y solo
+    actúa si el flag está prendido; si no, delega a mensaje_no_reconocido para no cambiar el
+    comportamiento normal de cualquier otro mensaje del admin."""
+    if not context.user_data.get("esperando_broadcast_contenido"):
+        await mensaje_no_reconocido(update, context)
+        return
+
+    context.user_data["esperando_broadcast_contenido"] = False
+    modo = context.user_data.pop("broadcast_modo", "real")
+    origen_chat_id = update.effective_chat.id
+    origen_message_id = update.effective_message.message_id
+
+    if modo == "test":
+        await context.bot.copy_message(chat_id=origen_chat_id, from_chat_id=origen_chat_id, message_id=origen_message_id)
+        await update.effective_message.reply_text("✅ Así se vería (enviado solo a ti, no se difundió a nadie más).")
+        return
+
+    context.user_data["broadcast_origen"] = {"chat_id": origen_chat_id, "message_id": origen_message_id}
+    destinatarios = await db.listar_telegram_user_ids(context.bot_data["db_pool"])
+    await context.bot.copy_message(chat_id=origen_chat_id, from_chat_id=origen_chat_id, message_id=origen_message_id)
+    teclado = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Confirmar envío", callback_data="confirmar_broadcast")],
+        [InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")],
+    ])
+    await update.effective_message.reply_text(
+        f"☝️ Así se va a ver. ¿Confirmas el envío a los {len(destinatarios)} usuarios que interactuaron con el bot?",
+        reply_markup=teclado,
+    )
+
+
+async def cb_confirmar_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Dispara el envío masivo tras la confirmación (ver capturar_broadcast_contenido). Verifica
+    la identidad del que tocó el botón además del filtro de registro del comando — es una acción
+    irreversible de alto impacto (le llega a todo el que alguna vez usó el bot), así que no alcanza
+    con confiar en que solo el admin vio el botón."""
+    query = update.callback_query
+    if update.effective_user is None or update.effective_user.id != context.bot_data.get("admin_id"):
+        await query.answer("No autorizado.", show_alert=True)
+        return
+    await query.answer()
+
+    origen = context.user_data.pop("broadcast_origen", None)
+    if origen is None:
+        await query.edit_message_text("⚠️ Ya no hay ninguna difusión pendiente de confirmar.")
+        return
+
+    await query.edit_message_text("🚀 Enviando...")
+    destinatarios = await db.listar_telegram_user_ids(context.bot_data["db_pool"])
+
+    enviados = bloqueados = fallidos = 0
+    for telegram_user_id in destinatarios:
+        try:
+            await context.bot.copy_message(
+                chat_id=telegram_user_id, from_chat_id=origen["chat_id"], message_id=origen["message_id"],
+            )
+            enviados += 1
+        except RetryAfter as error:
+            await asyncio.sleep(error.retry_after)
+            try:
+                await context.bot.copy_message(
+                    chat_id=telegram_user_id, from_chat_id=origen["chat_id"], message_id=origen["message_id"],
+                )
+                enviados += 1
+            except TelegramError:
+                fallidos += 1
+        except Forbidden:
+            bloqueados += 1
+        except TelegramError:
+            log.exception("Falló el broadcast hacia %s", telegram_user_id)
+            fallidos += 1
+        await asyncio.sleep(BROADCAST_DELAY_SEGUNDOS)
+
+    await context.bot.send_message(
+        chat_id=origen["chat_id"],
+        text=(
+            f"✅ Difusión terminada: {enviados} enviados, {bloqueados} bloquearon el bot, "
+            f"{fallidos} fallaron por otro motivo."
+        ),
+    )
+
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     config = cargar_config()
     # deep link `/start sus_<canal_id>` (ej. https://t.me/bot?start=sus_test2): dispara el flujo
@@ -309,6 +415,9 @@ async def cb_volver_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     context.user_data["esperando_email_vip"] = False
     context.user_data.pop("email_vip_pendiente", None)
     context.user_data.pop("canal_id_pendiente", None)
+    context.user_data["esperando_broadcast_contenido"] = False
+    context.user_data.pop("broadcast_modo", None)
+    context.user_data.pop("broadcast_origen", None)
     config = cargar_config()
     await _mostrar(update, context, texto_bienvenida(config), teclado_inicio(config))
 
@@ -957,12 +1066,18 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(cb_reescribir_email_vip, pattern="^reescribir_email_vip$"))
     app.add_handler(CallbackQueryHandler(cb_volver_menu, pattern="^volver_menu$"))
     app.add_handler(CallbackQueryHandler(cb_ver_mis_canales, pattern="^ver_mis_canales$"))
+    app.add_handler(CallbackQueryHandler(cb_confirmar_broadcast, pattern="^confirmar_broadcast$"))
     app.add_handler(ChatJoinRequestHandler(cb_solicitud_union))
     if admin_id is not None:
+        app.bot_data["admin_id"] = admin_id
         app.add_handler(CommandHandler("stats", cmd_stats, filters=filters.User(user_id=admin_id)))
         app.add_handler(CommandHandler("pausar", cmd_pausar, filters=filters.User(user_id=admin_id)))
         app.add_handler(CommandHandler("reanudar", cmd_reanudar, filters=filters.User(user_id=admin_id)))
         app.add_handler(CommandHandler("estado", cmd_estado, filters=filters.User(user_id=admin_id)))
+        app.add_handler(CommandHandler("broadcast", cmd_broadcast, filters=filters.User(user_id=admin_id)))
+        app.add_handler(MessageHandler(
+            filters.User(user_id=admin_id) & ~filters.COMMAND, capturar_broadcast_contenido,
+        ))
     app.add_handler(MessageHandler(filters.COMMAND | filters.TEXT, mensaje_no_reconocido))
     app.add_error_handler(manejar_error)
 
