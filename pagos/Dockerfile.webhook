@@ -14,6 +14,7 @@ COPY pagos/db.py pagos/db.py
 COPY pagos/logica.py pagos/logica.py
 COPY pagos/mercadopago_client.py pagos/mercadopago_client.py
 COPY pagos/pagos_tarjeta.py pagos/pagos_tarjeta.py
+COPY pagos/precios.py pagos/precios.py
 COPY pagos/telegram_client.py pagos/telegram_client.py
 COPY pagos/webhook.py pagos/webhook.py
 COPY web/data/ web/data/
