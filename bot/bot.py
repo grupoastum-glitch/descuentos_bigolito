@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 import mercadopago
 from dotenv import load_dotenv
 from mercadopago.errors.exceptions import MPServerError
-from telegram import BotCommand, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import BotCommand, BotCommandScopeChat, Chat, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest, Conflict, Forbidden, RetryAfter, TelegramError
 from telegram.helpers import escape_markdown
 from telegram.ext import (
@@ -221,13 +221,17 @@ async def _mostrar(
 
 
 async def capturar_usuario(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Guarda el username de quien mande cualquier update (comando, callback, solicitud de unión,
-    etc.) en telegram_usuarios — captura pasiva para que pagos/logica.py lo tenga a mano al avisar
-    una venta, sin pedirlo en vivo a la API en el momento del pago. group=-1 en el registro (ver
-    main()) para que corra antes que el resto sin depender de qué handler específico matchea.
-    Nunca debe interrumpir el procesamiento normal del update: cualquier falla queda solo
-    logueada."""
-    if update.effective_user is None:
+    """Guarda el username de quien le mande un mensaje privado al bot en telegram_usuarios —
+    captura pasiva para que pagos/logica.py lo tenga a mano al avisar una venta, sin pedirlo en
+    vivo a la API en el momento del pago. group=-1 en el registro (ver main()) para que corra
+    antes que el resto sin depender de qué handler específico matchea. Solo chats privados: un
+    grupo (ej. Chat General) o una solicitud de unión a un canal pago no implican que el bot pueda
+    mandarle un DM después — capturarlos igual solo infla /broadcast con gente "Chat not found"
+    (ver cb_confirmar_broadcast). Nunca debe interrumpir el procesamiento normal del update:
+    cualquier falla queda solo logueada."""
+    if update.effective_user is None or update.effective_chat is None:
+        return
+    if update.effective_chat.type != Chat.PRIVATE:
         return
     try:
         await db.actualizar_username(
