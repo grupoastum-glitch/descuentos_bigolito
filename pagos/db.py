@@ -43,6 +43,12 @@ ALTER TABLE suscripciones ADD COLUMN IF NOT EXISTS payer_email TEXT;
 -- aviso. Solo se usa para estado='prueba'; en filas pagas queda NULL siempre.
 ALTER TABLE suscripciones ADD COLUMN IF NOT EXISTS recordatorio_prueba_enviado_en TIMESTAMPTZ;
 
+-- precio (CLP) que quedó fijado para esta persona en este canal la primera vez que pagó — ver
+-- escalamiento de precios por tramos (pagos/precios.py). NULL hasta el primer pago confirmado;
+-- una vez fijado nunca se pisa (ver el COALESCE al revés en upsert_suscripcion, comparado con
+-- payer_email), para que sobreviva a renovaciones y a cancelar/resuscribirse más adelante.
+ALTER TABLE suscripciones ADD COLUMN IF NOT EXISTS precio_congelado INTEGER;
+
 -- username de Telegram de cada usuario que interactuó con el bot alguna vez (ver
 -- bot/db.py::actualizar_username, que la actualiza en cada update). Separada de suscripciones
 -- porque no todo el mundo que escribe al bot llega a pagar, y el username puede cambiar con el
@@ -97,6 +103,7 @@ async def upsert_suscripcion(
     mercadopago_preapproval_id: str,
     estado: str,
     payer_email: str | None = None,
+    precio_congelado: int | None = None,
 ) -> bool:
     """Crea o actualiza la suscripción de (telegram_user_id, canal_id). Devuelve True si esta
     llamada es la que activa el acceso por primera vez (fila nueva, o pasa de un estado que no
@@ -104,7 +111,13 @@ async def upsert_suscripcion(
     al canal (ver pagos/webhook.py). Una renovación que ya estaba activa devuelve False.
 
     payer_email es opcional: si el caller no lo tiene a mano (ej. algún camino que no venga de
-    aplicar_estado_preapproval), COALESCE conserva el que ya hubiera guardado en vez de borrarlo."""
+    aplicar_estado_preapproval), COALESCE conserva el que ya hubiera guardado en vez de borrarlo.
+
+    precio_congelado: el monto real (transaction_amount de MercadoPago) de esta preapproval — ver
+    pagos/precios.py. A diferencia de payer_email, el COALESCE va al revés (el valor que ya
+    hubiera en la fila gana sobre el nuevo): una vez que una persona fijó su precio, no debe
+    cambiar nunca, ni siquiera si este upsert se llama de nuevo para la misma fila (renovación,
+    o resuscripción tras cancelar)."""
     ahora = datetime.now(timezone.utc)
     async with pool.acquire() as con:
         async with con.transaction():
@@ -114,14 +127,15 @@ async def upsert_suscripcion(
             )
             await con.execute(
                 """INSERT INTO suscripciones
-                       (telegram_user_id, canal_id, mercadopago_preapproval_id, estado, fecha_inicio, ultima_actualizacion, payer_email)
-                   VALUES ($1, $2, $3, $4, $5, $5, $6)
+                       (telegram_user_id, canal_id, mercadopago_preapproval_id, estado, fecha_inicio, ultima_actualizacion, payer_email, precio_congelado)
+                   VALUES ($1, $2, $3, $4, $5, $5, $6, $7)
                    ON CONFLICT (telegram_user_id, canal_id) DO UPDATE SET
                        mercadopago_preapproval_id = EXCLUDED.mercadopago_preapproval_id,
                        estado = EXCLUDED.estado,
                        ultima_actualizacion = EXCLUDED.ultima_actualizacion,
-                       payer_email = COALESCE(EXCLUDED.payer_email, suscripciones.payer_email)""",
-                telegram_user_id, canal_id, mercadopago_preapproval_id, estado, ahora, payer_email,
+                       payer_email = COALESCE(EXCLUDED.payer_email, suscripciones.payer_email),
+                       precio_congelado = COALESCE(suscripciones.precio_congelado, EXCLUDED.precio_congelado)""",
+                telegram_user_id, canal_id, mercadopago_preapproval_id, estado, ahora, payer_email, precio_congelado,
             )
     era_activa = anterior is not None and anterior["estado"] == "activa"
     return estado == "activa" and not era_activa
@@ -185,6 +199,31 @@ async def obtener_username(pool: asyncpg.Pool, telegram_user_id: int) -> str | N
             telegram_user_id,
         )
     return fila["username"] if fila else None
+
+
+async def obtener_precio_congelado(pool: asyncpg.Pool, telegram_user_id: int, canal_id: str) -> int | None:
+    """El precio que ya quedó fijado para esta persona en este canal (ver precio_congelado en el
+    DDL), o None si nunca pagó acá todavía — en ese caso pagos/precios.py::resolver_precio calcula
+    el tramo que le toca según cuánta gente pagó antes."""
+    async with pool.acquire() as con:
+        fila = await con.fetchrow(
+            "SELECT precio_congelado FROM suscripciones WHERE telegram_user_id = $1 AND canal_id = $2",
+            telegram_user_id, canal_id,
+        )
+    return fila["precio_congelado"] if fila else None
+
+
+async def contar_precios_congelados(pool: asyncpg.Pool, canal_id: str) -> int:
+    """Total histórico de personas que alguna vez fijaron un precio en este canal (primer pago
+    confirmado) — la cantidad que pagos/precios.py usa para decidir en qué tramo cae la próxima
+    persona nueva. Nunca baja aunque haya cancelaciones, a propósito (decisión del usuario): una
+    fila cuenta para siempre una vez que precio_congelado quedó seteado, sin importar su estado
+    actual."""
+    async with pool.acquire() as con:
+        return await con.fetchval(
+            "SELECT COUNT(*) FROM suscripciones WHERE canal_id = $1 AND precio_congelado IS NOT NULL",
+            canal_id,
+        )
 
 
 async def registrar_pago_historial(

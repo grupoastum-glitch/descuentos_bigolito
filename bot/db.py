@@ -99,6 +99,29 @@ async def obtener_email(pool: asyncpg.Pool, telegram_user_id: int, canal_id: str
     return fila["payer_email"] if fila and fila["payer_email"] else None
 
 
+async def obtener_precio_congelado(pool: asyncpg.Pool, telegram_user_id: int, canal_id: str) -> int | None:
+    """Espejo de solo lectura de pagos/db.py::obtener_precio_congelado (misma tabla, mismo
+    criterio de duplicación que CANAL_CHAT_ID) — el precio que ya quedó fijado de por vida para
+    esta persona en este canal, o None si nunca pagó acá todavía. Usado por bot/precios.py."""
+    async with pool.acquire() as con:
+        fila = await con.fetchrow(
+            "SELECT precio_congelado FROM suscripciones WHERE telegram_user_id = $1 AND canal_id = $2",
+            telegram_user_id, canal_id,
+        )
+    return fila["precio_congelado"] if fila else None
+
+
+async def contar_precios_congelados(pool: asyncpg.Pool, canal_id: str) -> int:
+    """Espejo de solo lectura de pagos/db.py::contar_precios_congelados — total histórico de
+    personas que ya fijaron un precio en este canal, usado por bot/precios.py para calcular el
+    tramo que le toca a alguien que se suscribe por primera vez."""
+    async with pool.acquire() as con:
+        return await con.fetchval(
+            "SELECT COUNT(*) FROM suscripciones WHERE canal_id = $1 AND precio_congelado IS NOT NULL",
+            canal_id,
+        )
+
+
 async def actualizar_email(pool: asyncpg.Pool, telegram_user_id: int, canal_id: str, email: str) -> None:
     """Guarda el email que el usuario acaba de escribir y confirmar, para no volver a pedirlo en
     la próxima renovación (ver obtener_email). Única excepción a "solo lectura" de este módulo:

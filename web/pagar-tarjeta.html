@@ -130,8 +130,8 @@
     const exp = params.get('exp');
     const sig = params.get('sig');
     // monto/nombre_canal viajan sin firmar — son solo para mostrar en pantalla, el servidor
-    // siempre resuelve el monto real desde config.json al crear la suscripción (ver
-    // pagos/pagos_tarjeta.py), nunca confía en lo que mande el navegador.
+    // siempre resuelve el monto real por su cuenta (precio de tramo o ya congelado, ver
+    // pagos/precios.py) al crear la suscripción, nunca confía en lo que mande el navegador.
     const monto = Number(params.get('monto'));
     const nombreCanal = params.get('nombre_canal') || 'Suscripción VIP';
 

@@ -24,6 +24,7 @@ import config
 import config_canales
 import db
 import mercadopago_client
+import precios
 
 log = logging.getLogger("pagos.pagos_tarjeta")
 
@@ -86,6 +87,12 @@ async def crear_pago_tarjeta(request: Request) -> JSONResponse:
         return JSONResponse({"error": "error_interno"}, status_code=500)
     if not canal_cfg or not canal_cfg.get("visible", True):
         return JSONResponse({"error": "canal_invalido"}, status_code=400)
+
+    # precio real de esta persona (tramo si es primera vez, o su precio_congelado si ya pagó
+    # antes acá — ver pagos/precios.py) en vez del "monto" fijo de config.json, que con el
+    # escalamiento de precios ya no es un número único.
+    precio = await precios.resolver_precio(pool, telegram_user_id_int, canal_id, canal_cfg)
+    canal_cfg = {**canal_cfg, "monto": precio}
 
     try:
         await run_in_threadpool(

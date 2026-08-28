@@ -36,6 +36,7 @@ from telegram.ext import (
 )
 
 import db
+import precios
 
 RUTA_CONFIG = Path(__file__).resolve().parent.parent / "web" / "data" / "config.json"
 
@@ -117,6 +118,10 @@ def cargar_config() -> dict:
 def _canales_pagos(config: dict) -> dict[str, dict]:
     """Canales pagos definidos en config.json, indexados por canal_id."""
     return {c["canal_id"]: c for c in config.get("canales_pagos") or [] if c.get("canal_id")}
+
+
+def _moneda(monto: int) -> str:
+    return f"${monto:,}".replace(",", ".")
 
 
 def teclado_inicio(config: dict) -> InlineKeyboardMarkup | None:
@@ -239,9 +244,6 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     revelar que el comando existe. Sin parse_mode: el texto solo interpola números que nosotros
     formateamos, no hace falta Markdown ni el riesgo de que rompa el parseo."""
     stats = await db.estadisticas(context.bot_data["db_pool"])
-
-    def _moneda(monto: int) -> str:
-        return f"${monto:,}".replace(",", ".")
 
     texto = (
         "📊 Estadísticas de suscripciones\n\n"
@@ -541,7 +543,6 @@ async def _iniciar_suscripcion(
         return
 
     context.user_data["canal_id_pendiente"] = canal_id
-    intro = f"👑 *{canal_cfg['descripcion']}*\n\n" if canal_cfg.get("descripcion") else ""
 
     # Si ya está activo, cortamos acá — dejarlo seguir podría terminar en una segunda preapproval
     # authorized en paralelo (doble cobro real), no solo una pendiente duplicada.
@@ -555,6 +556,15 @@ async def _iniciar_suscripcion(
         teclado = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")]])
         await _mostrar(update, context, texto, teclado)
         return
+
+    intro = f"👑 *{canal_cfg['descripcion']}*\n\n" if canal_cfg.get("descripcion") else ""
+    # Precio real de esta persona (su tramo si es primera vez, o el que ya tenía fijado si vuelve
+    # a suscribirse — ver bot/precios.py) para mostrarlo antes de pedir el email.
+    precio = await precios.resolver_precio(context.bot_data["db_pool"], telegram_user_id, canal_id, canal_cfg)
+    intro += (
+        f"💰 Tu precio: {_moneda(precio)} cada 30 días — queda fijo para ti de por vida, aunque "
+        "el precio suba para nuevos suscriptores más adelante.\n\n"
+    )
 
     # Si ya se suscribió antes con éxito, se saltea pedir el email de nuevo — se reusa la misma
     # pantalla de confirmación que el flujo normal (cb_confirmar_email_vip/cb_reescribir_email_vip).
@@ -771,7 +781,10 @@ def _firmar_link_tarjeta(
     pagos/pagos_tarjeta.py pueda confiar en telegram_user_id/canal_id/email — sin esto, cualquiera
     podría cambiar esos parámetros a mano en la URL, porque el navegador no tiene ninguna sesión
     autenticada de Telegram. monto/nombre_canal viajan sin firmar (solo para mostrar en pantalla,
-    el backend siempre resuelve el monto real desde config.json, ver pagos/pagos_tarjeta.py)."""
+    el backend siempre resuelve el monto real por su cuenta vía precios.resolver_precio, ver
+    pagos/pagos_tarjeta.py — el canal_cfg que llega acá ya trae el mismo precio resuelto por
+    bot/precios.py, así que en la práctica coinciden, pero el backend nunca confía en este
+    query param para el cobro)."""
     canal_id = canal_cfg["canal_id"]
     exp = int(time.time()) + _VENTANA_LINK_TARJETA_SEGUNDOS
     payload = f"{telegram_user_id}:{canal_id}:{email}:{exp}"
@@ -898,6 +911,11 @@ async def cb_confirmar_email_vip(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     telegram_user_id = update.effective_user.id
+    # Mismo cálculo que en _iniciar_suscripcion, para que el monto mostrado antes coincida con el
+    # que realmente se cobra acá — se sobreescribe canal_cfg["monto"] para que tanto
+    # _crear_preapproval como _firmar_link_tarjeta lo usen sin más cambios.
+    precio = await precios.resolver_precio(context.bot_data["db_pool"], telegram_user_id, canal_id, canal_cfg)
+    canal_cfg = {**canal_cfg, "monto": precio}
     # Sin botones mientras se procesa: la creación de la preapproval puede tardar unos segundos
     # (ver reintentos en _crear_preapproval), y sin esto el botón "Sí, confirmar" queda visible y
     # clickeable durante la espera.

@@ -18,7 +18,7 @@
     "nombre": "Descuentos VIP",
     "url": "https://t.me/descuentos_bigolito_cl_bot",
     "icono": "crown",
-    "descripcion": "Accede a varios canales VIP con descuentos del 50% y más, por $4.000 cada 30 días.",
+    "descripcion": "Accede a varios canales VIP con descuentos del 50% y más. Desde $1.000 al mes — el precio que pagues queda fijo para ti de por vida.",
     "nota": "Pago seguro con MercadoPago, cancelas cuando quieras."
   },
   "canales_pagos": [
@@ -26,10 +26,19 @@
       "canal_id": "vip",
       "nombre": "Descuentos VIP",
       "nombre_corto": "VIP",
-      "descripcion": "Accede a varios canales VIP con descuentos del 50% y más, solo por:\n\n$4.000 cada 30 días.",
+      "descripcion": "Accede a varios canales VIP con descuentos del 50% y más. El precio sube a medida que se suman más suscriptores, pero el que pagues vos queda fijo para siempre.",
       "canales_incluidos": ["Retail VIP 💎", "Geek VIP 🕹️", "Deco/Hogar VIP 🏠", "Tech VIP 🖥", "Mascotas VIP 🐶🐱", "Fitness VIP 🏋️", "+80% OFF VIP 🔥"],
       "nota": "Pago seguro con MercadoPago, cancelas cuando quieras.",
-      "monto": 4000,
+      "tramos": [
+        {"hasta": 50, "monto": 1000},
+        {"hasta": 100, "monto": 2000},
+        {"hasta": 200, "monto": 3000},
+        {"hasta": 300, "monto": 4000},
+        {"hasta": 400, "monto": 5000},
+        {"hasta": 500, "monto": 6000},
+        {"hasta": 600, "monto": 7000}
+      ],
+      "tramo_monto_maximo": 7000,
       "frecuencia": 30,
       "frecuencia_tipo": "days",
       "visible": true

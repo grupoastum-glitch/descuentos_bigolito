@@ -10,7 +10,6 @@ from datetime import timedelta
 import asyncpg
 
 import config
-import config_canales
 import db
 import mercadopago_client
 import telegram_client
@@ -62,6 +61,7 @@ def parse_external_reference(external_reference: str | None) -> tuple[int, str, 
 
 async def _registrar_y_avisar_venta(
     pool: asyncpg.Pool, telegram_user_id: int, canal_id: str, tipo: str, email: str | None,
+    monto: int | None,
 ) -> None:
     """Registra un pago confirmado (alta o renovación) en pagos_historial y avisa al canal admin
     de control interno. Se llama SIEMPRE después de que el usuario ya tiene su acceso (ver
@@ -71,9 +71,13 @@ async def _registrar_y_avisar_venta(
     (guardar el historial o avisar al admin) no debe disparar ese reintento, porque el acceso ya
     quedó dado y el reintento no lo repetiría igual (es_nueva_activacion/ultimo_invoice_id ya
     quedaron marcados), solo generaría ruido. En el peor caso se pierde un aviso puntual, nunca el
-    acceso del que pagó."""
+    acceso del que pagó.
+
+    monto lo pasa el caller (el transaction_amount real de la preapproval en MercadoPago) en vez
+    de recalcularse acá desde config_canales: con el escalamiento de precios por tramos, el precio
+    global vigente hoy ya no representa lo que esta persona puntual paga (ver pagos/precios.py) —
+    usar el monto real evita que una renovación vieja quede mal registrada con el precio nuevo."""
     try:
-        monto = config_canales.canales_pagos().get(canal_id, {}).get("monto")
         username = await db.obtener_username(pool, telegram_user_id)
         await db.registrar_pago_historial(pool, telegram_user_id, canal_id, tipo, monto, email)
         await telegram_client.avisar_pago(telegram_user_id, username, canal_id, tipo, monto, email)
@@ -112,6 +116,12 @@ async def aplicar_estado_preapproval(pool: asyncpg.Pool, preapproval: dict) -> N
         )
         return
 
+    # transaction_amount real que MercadoPago tiene guardado para esta preapproval — es el precio
+    # que efectivamente se le cobra a esta persona (ver pagos/precios.py, que lo calculó al crear
+    # la preapproval). Se guarda tal cual en precio_congelado; el COALESCE al revés de
+    # upsert_suscripcion asegura que solo "prenda" la primera vez.
+    monto = preapproval.get("auto_recurring", {}).get("transaction_amount")
+
     # preapproval.get("payer_email"): confirmado contra la documentación oficial de MercadoPago
     # que esto siempre viene None — el recurso de preapproval solo trae "payer_id" (un ID interno
     # numérico), nunca el email. El email real viaja en el external_reference (ver
@@ -119,7 +129,7 @@ async def aplicar_estado_preapproval(pool: asyncpg.Pool, preapproval: dict) -> N
     # API empieza a devolverlo, protegido por el COALESCE de db.upsert_suscripcion.
     es_nueva_activacion = await db.upsert_suscripcion(
         pool, telegram_user_id, canal_id, preapproval["id"], estado,
-        email or preapproval.get("payer_email"),
+        email or preapproval.get("payer_email"), monto,
     )
 
     if estado == "activa":
@@ -130,7 +140,7 @@ async def aplicar_estado_preapproval(pool: asyncpg.Pool, preapproval: dict) -> N
             # que sumarlo acá también contaría el mismo pago dos veces.
             await db.extender_acceso(pool, telegram_user_id, canal_id, timedelta(0))
             await telegram_client.invitar(telegram_user_id, canal_id)
-            await _registrar_y_avisar_venta(pool, telegram_user_id, canal_id, "alta", email)
+            await _registrar_y_avisar_venta(pool, telegram_user_id, canal_id, "alta", email, monto)
     # Ya no se expulsa acá al pausar/cancelar — el usuario conserva el acceso hasta que vence
     # acceso_hasta (el período que ya pagó). La expulsión real la hace pagos/reconciliacion.py
     # cuando ese plazo pasa. Ver PLAN_periodo_gracia_cancelacion.md.
@@ -191,6 +201,7 @@ async def aplicar_pago_recurrente(pool: asyncpg.Pool, invoice: dict) -> None:
         "Acceso extendido para %s en canal %s (invoice %s, preapproval %s).",
         fila["telegram_user_id"], fila["canal_id"], invoice_id, preapproval_id,
     )
+    monto = preapproval.get("auto_recurring", {}).get("transaction_amount")
     await _registrar_y_avisar_venta(
-        pool, fila["telegram_user_id"], fila["canal_id"], "renovacion", fila.get("payer_email"),
+        pool, fila["telegram_user_id"], fila["canal_id"], "renovacion", fila.get("payer_email"), monto,
     )
