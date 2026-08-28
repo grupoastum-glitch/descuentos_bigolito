@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 import mercadopago
 from dotenv import load_dotenv
 from mercadopago.errors.exceptions import MPServerError
-from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import BotCommand, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest, Conflict, Forbidden, RetryAfter, TelegramError
 from telegram.helpers import escape_markdown
 from telegram.ext import (
@@ -294,14 +294,64 @@ async def cmd_estado(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await update.message.reply_text(texto)
 
 
+async def _copiar_o_enviar_broadcast(bot, chat_id: int, origen: dict):
+    """Manda el contenido de un broadcast a `chat_id`. `origen["tipo"] == "texto"` es el caso del
+    texto escrito junto al comando (`/broadcast <texto>`, ver cmd_broadcast) — no hay un mensaje
+    "limpio" del que copiar (el mensaje real incluye el comando), así que se manda directo con
+    send_message. `origen["tipo"] == "copiar"` es el flujo en 2 pasos (capturar_broadcast_
+    contenido) — ahí sí hay un mensaje aparte del admin (texto o foto) para copiar tal cual."""
+    if origen["tipo"] == "texto":
+        return await bot.send_message(chat_id=chat_id, text=origen["texto"], reply_markup=TECLADO_BROADCAST)
+    return await bot.copy_message(
+        chat_id=chat_id, from_chat_id=origen["chat_id"], message_id=origen["message_id"],
+        reply_markup=TECLADO_BROADCAST,
+    )
+
+
+async def _procesar_origen_broadcast(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, modo: str, origen: dict,
+) -> None:
+    """Lógica común a los dos caminos que llegan a tener un `origen` de broadcast listo: el texto
+    inline del comando (cmd_broadcast) y el contenido capturado en el mensaje siguiente
+    (capturar_broadcast_contenido). Modo test manda directo solo al admin; modo real muestra
+    preview + pide confirmación antes de tocar a nadie más."""
+    chat_id = update.effective_chat.id
+    if modo == "test":
+        await _copiar_o_enviar_broadcast(context.bot, chat_id, origen)
+        await update.effective_message.reply_text("✅ Así se vería (enviado solo a ti, no se difundió a nadie más).")
+        return
+
+    context.user_data["broadcast_origen"] = origen
+    destinatarios = await db.listar_telegram_user_ids(context.bot_data["db_pool"])
+    await _copiar_o_enviar_broadcast(context.bot, chat_id, origen)
+    teclado = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Confirmar envío", callback_data="confirmar_broadcast")],
+        [InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")],
+    ])
+    await update.effective_message.reply_text(
+        f"☝️ Así se va a ver. ¿Confirmas el envío a los {len(destinatarios)} usuarios que interactuaron con el bot?",
+        reply_markup=teclado,
+    )
+
+
 async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Admin-only (ver cmd_stats). Arranca el flujo de difusión masiva: `/broadcast test` manda el
-    siguiente mensaje que escriba el admin solo a él mismo (para previsualizar); `/broadcast` a
-    secas lo manda, tras confirmar, a todos los telegram_user_id de la tabla telegram_usuarios
-    (cualquiera que haya interactuado con el bot alguna vez, no solo suscriptores — ver
-    db.py::listar_telegram_user_ids). El contenido se captura en el próximo mensaje del admin, no
-    acá (ver capturar_broadcast_contenido) — así admite texto o foto sin duplicar lógica."""
-    modo = "test" if context.args and context.args[0] == "test" else "real"
+    """Admin-only (ver cmd_stats). `/broadcast <texto>` o `/broadcast test <texto>` mandan ese
+    texto directo (test: solo al admin; real: preview + confirmación). `/broadcast` o
+    `/broadcast test` sin texto arrancan el flujo en 2 pasos (pide el contenido en el próximo
+    mensaje — necesario para mandar una foto, que no se puede pegar como argumento de un comando).
+    Se parsea update.message.text a mano en vez de context.args porque args separa por espacios y
+    se comería los saltos de línea de un mensaje con párrafos."""
+    texto_completo = update.message.text or ""
+    resto = texto_completo.split(maxsplit=1)[1] if " " in texto_completo or "\n" in texto_completo else ""
+    modo = "real"
+    if resto == "test" or resto.startswith("test ") or resto.startswith("test\n"):
+        modo = "test"
+        resto = resto[len("test"):].lstrip("\n ")
+
+    if resto:
+        await _procesar_origen_broadcast(update, context, modo, {"tipo": "texto", "texto": resto})
+        return
+
     context.user_data["broadcast_modo"] = modo
     context.user_data["esperando_broadcast_contenido"] = True
     teclado = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")]])
@@ -317,40 +367,21 @@ async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def capturar_broadcast_contenido(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Captura el mensaje (texto o foto) que el admin manda después de /broadcast o
-    /broadcast test — ver cmd_broadcast. Solo se registra para el admin (filters.User) y solo
-    actúa si el flag está prendido; si no, delega a mensaje_no_reconocido para no cambiar el
-    comportamiento normal de cualquier otro mensaje del admin."""
+    /broadcast test SIN texto inline — ver cmd_broadcast. Solo se registra para el admin
+    (filters.User) y solo actúa si el flag está prendido; si no, delega a mensaje_no_reconocido
+    para no cambiar el comportamiento normal de cualquier otro mensaje del admin."""
     if not context.user_data.get("esperando_broadcast_contenido"):
         await mensaje_no_reconocido(update, context)
         return
 
     context.user_data["esperando_broadcast_contenido"] = False
     modo = context.user_data.pop("broadcast_modo", "real")
-    origen_chat_id = update.effective_chat.id
-    origen_message_id = update.effective_message.message_id
-
-    if modo == "test":
-        await context.bot.copy_message(
-            chat_id=origen_chat_id, from_chat_id=origen_chat_id, message_id=origen_message_id,
-            reply_markup=TECLADO_BROADCAST,
-        )
-        await update.effective_message.reply_text("✅ Así se vería (enviado solo a ti, no se difundió a nadie más).")
-        return
-
-    context.user_data["broadcast_origen"] = {"chat_id": origen_chat_id, "message_id": origen_message_id}
-    destinatarios = await db.listar_telegram_user_ids(context.bot_data["db_pool"])
-    await context.bot.copy_message(
-        chat_id=origen_chat_id, from_chat_id=origen_chat_id, message_id=origen_message_id,
-        reply_markup=TECLADO_BROADCAST,
-    )
-    teclado = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Confirmar envío", callback_data="confirmar_broadcast")],
-        [InlineKeyboardButton("❌ Cancelar", callback_data="volver_menu")],
-    ])
-    await update.effective_message.reply_text(
-        f"☝️ Así se va a ver. ¿Confirmas el envío a los {len(destinatarios)} usuarios que interactuaron con el bot?",
-        reply_markup=teclado,
-    )
+    origen = {
+        "tipo": "copiar",
+        "chat_id": update.effective_chat.id,
+        "message_id": update.effective_message.message_id,
+    }
+    await _procesar_origen_broadcast(update, context, modo, origen)
 
 
 async def cb_confirmar_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -375,18 +406,12 @@ async def cb_confirmar_broadcast(update: Update, context: ContextTypes.DEFAULT_T
     enviados = bloqueados = fallidos = 0
     for telegram_user_id in destinatarios:
         try:
-            await context.bot.copy_message(
-                chat_id=telegram_user_id, from_chat_id=origen["chat_id"], message_id=origen["message_id"],
-                reply_markup=TECLADO_BROADCAST,
-            )
+            await _copiar_o_enviar_broadcast(context.bot, telegram_user_id, origen)
             enviados += 1
         except RetryAfter as error:
             await asyncio.sleep(error.retry_after)
             try:
-                await context.bot.copy_message(
-                    chat_id=telegram_user_id, from_chat_id=origen["chat_id"], message_id=origen["message_id"],
-                    reply_markup=TECLADO_BROADCAST,
-                )
+                await _copiar_o_enviar_broadcast(context.bot, telegram_user_id, origen)
                 enviados += 1
             except TelegramError:
                 fallidos += 1
@@ -1008,6 +1033,14 @@ async def manejar_error(_, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 # ------------------------------ arranque ------------------------------
 
+COMANDOS_ADMIN = [
+    BotCommand("stats", "Estadísticas de suscripciones"),
+    BotCommand("pausar", "Pausar scraping y publicación"),
+    BotCommand("reanudar", "Reanudar scraping y publicación"),
+    BotCommand("estado", "Ver estado de las pausas"),
+    BotCommand("broadcast", "Difundir un mensaje a todos los usuarios"),
+]
+
 
 async def sincronizar_perfil(app: Application) -> None:
     """Aplica descripción, bio corta y comandos vía Bot API.
@@ -1030,6 +1063,15 @@ async def sincronizar_perfil(app: Application) -> None:
         )
     else:
         await app.bot.delete_my_commands()
+
+    # comandos admin (/stats, /pausar, etc.) en el menú "/" — solo del chat del admin
+    # (BotCommandScopeChat), no toca el menú default que ve cualquier otro usuario.
+    admin_id = app.bot_data.get("admin_id")
+    if admin_id is not None:
+        await app.bot.set_my_commands(
+            [BotCommand(c["comando"], c["descripcion"]) for c in comandos] + COMANDOS_ADMIN,
+            scope=BotCommandScopeChat(chat_id=admin_id),
+        )
     log.info("Perfil del bot sincronizado con config.json")
 
 
