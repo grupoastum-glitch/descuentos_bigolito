@@ -222,8 +222,8 @@ async def existe_registro(pool: asyncpg.Pool, telegram_user_id: int, canal_id: s
 
 
 async def iniciar_prueba_gratis(pool: asyncpg.Pool, telegram_user_id: int, canal_id: str) -> None:
-    """Crea la fila de prueba gratis: estado='prueba', sin preapproval real, acceso_hasta a 30 días
-    desde ahora. El caller debe haber chequeado existe_registro() antes — ON CONFLICT DO NOTHING
+    """Crea la fila de prueba gratis: estado='prueba', sin preapproval real, acceso_hasta a
+    _DURACION_PRUEBA_GRATIS desde ahora. El caller debe haber chequeado existe_registro() antes — ON CONFLICT DO NOTHING
     acá es solo por seguridad ante un doble clic, no reemplaza ese chequeo.
 
     acceso_hasta se calcula acá en Python (no `$4 + intervalo::interval` en el SQL) porque

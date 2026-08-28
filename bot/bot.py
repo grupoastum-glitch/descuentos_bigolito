@@ -154,13 +154,13 @@ async def teclado_inicio(config: dict, pool) -> InlineKeyboardMarkup | None:
                 callback_data=f"suscribirme_{canal['canal_id']}",
             )]
         )
-        # debajo del botón de pago: prueba gratis de 1 mes sin tarjeta, solo para quien nunca tuvo
+        # debajo del botón de pago: prueba gratis de 15 días sin tarjeta, solo para quien nunca tuvo
         # una fila en suscripciones para este canal_id (ver cb_probar_gratis, que valida esto de
         # nuevo al tocarlo — el botón se muestra siempre, igual que "Suscribirme" arriba, que
         # también se muestra sin importar si el usuario ya está activo).
         filas.append(
             [InlineKeyboardButton(
-                "🎁 Prueba gratis por 1 mes (sin tarjeta)",
+                "🎁 Prueba gratis 15 días (sin tarjeta)",
                 callback_data=f"probar_gratis_{canal['canal_id']}",
             )]
         )
@@ -671,7 +671,7 @@ async def _avisar_prueba_gratis_admin(
 
 
 async def cb_probar_gratis(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Activa la prueba gratis de 1 mes (sin tarjeta) para el canal_id que viaja en el
+    """Activa la prueba gratis de 15 días (sin tarjeta) para el canal_id que viaja en el
     callback_data. Solo para quien nunca tuvo una fila de suscripciones para ese canal (ni pagó
     antes ni usó su prueba ya — ver db.existe_registro, el UNIQUE de la tabla garantiza que solo
     puede haber una fila por persona y canal). El acceso se otorga igual que tras un pago
@@ -739,7 +739,7 @@ async def cb_probar_gratis(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     filas.append([InlineKeyboardButton("⬅️ Volver al menú", callback_data="volver_menu")])
     await _mostrar(
         update, context,
-        "🎁 ¡Tu mes gratis empezó! Toca para entrar a cada canal (invitación válida solo para ti):",
+        "🎁 ¡Tu prueba gratis de 15 días empezó! Toca para entrar a cada canal (invitación válida solo para ti):",
         InlineKeyboardMarkup(filas),
     )
 
