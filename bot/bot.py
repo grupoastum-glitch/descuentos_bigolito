@@ -403,7 +403,7 @@ async def cb_confirmar_broadcast(update: Update, context: ContextTypes.DEFAULT_T
     await query.edit_message_text("🚀 Enviando...")
     destinatarios = await db.listar_telegram_user_ids(context.bot_data["db_pool"])
 
-    enviados = bloqueados = fallidos = 0
+    enviados = bloqueados = nunca_abrio_chat = fallidos = 0
     for telegram_user_id in destinatarios:
         try:
             await _copiar_o_enviar_broadcast(context.bot, telegram_user_id, origen)
@@ -417,15 +417,27 @@ async def cb_confirmar_broadcast(update: Update, context: ContextTypes.DEFAULT_T
                 fallidos += 1
         except Forbidden:
             bloqueados += 1
+        except BadRequest as error:
+            # "Chat not found": el telegram_user_id llegó a telegram_usuarios por una solicitud de
+            # unión a un canal pago (ver cb_solicitud_union — capturar_usuario corre sobre
+            # cualquier update, no solo mensajes directos), pero esa persona nunca abrió un chat
+            # privado con el bot — Telegram no deja mandarle nada ahí. Distinto de "bloqueado"
+            # (ese sí tuvo chat y lo cerró) y de un error real, así que se cuenta aparte.
+            if "chat not found" in str(error).lower():
+                nunca_abrio_chat += 1
+            else:
+                log.exception("Falló el broadcast hacia %s", telegram_user_id)
+                fallidos += 1
         except TelegramError:
             log.exception("Falló el broadcast hacia %s", telegram_user_id)
             fallidos += 1
         await asyncio.sleep(BROADCAST_DELAY_SEGUNDOS)
 
     await context.bot.send_message(
-        chat_id=origen["chat_id"],
+        chat_id=update.effective_chat.id,
         text=(
             f"✅ Difusión terminada: {enviados} enviados, {bloqueados} bloquearon el bot, "
+            f"{nunca_abrio_chat} nunca abrieron un chat privado con el bot, "
             f"{fallidos} fallaron por otro motivo."
         ),
     )
