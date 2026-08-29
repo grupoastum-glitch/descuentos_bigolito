@@ -85,20 +85,38 @@ async def procesar_cupones(
 
 
 def construir_grupos_digest(activos: list[dict], hoy: str) -> dict | None:
-    """Filtra el snapshot activo a lo que corresponde mostrar en el digest de HOY: separa los
-    cupones de día específico que aplican hoy (agrupados por comercio) de los de "todos los
-    días" (combinados, sin importar comercio — van en una sección aparte, ver
-    telegram_publisher.formatear_digest_cupones). None si no queda nada que mostrar."""
+    """Filtra el snapshot activo a lo que corresponde mostrar en el digest de HOY, en 3 grupos:
+
+    - "hoy": cupones de día específico que aplican hoy, agrupados por comercio.
+    - "todos": cupones CONFIRMADOS como "todos los días" por la fuente (ej. Copec siempre trae su
+      `tag-dia`, aunque diga "Todos los días" explícito).
+    - "sin_dia": cupones sin ningún día detectado (`dia_semana is None`) — hoy solo pasa con
+      Shell, que no expone día en ningún campo estructurado y solo se infiere cuando el texto lo
+      menciona explícitamente (ver dias_semana.inferir_dia_semana_texto). Tratarlos igual que
+      "todos los días" sería engañoso: no sabemos si de verdad aplican siempre o si son de un
+      día específico que no logramos detectar — van aparte, con esa incertidumbre explícita en
+      el mensaje (ver telegram_publisher.formatear_digest_cupones).
+
+    None si no queda nada que mostrar en ningún grupo."""
     hoy_por_comercio: dict[str, list[dict]] = {comercio: [] for comercio in _ORDEN_COMERCIOS}
-    todos_los_dias: list[dict] = []
+    todos_confirmado: list[dict] = []
+    sin_dia_confirmado: dict[str, list[dict]] = {comercio: [] for comercio in _ORDEN_COMERCIOS}
 
     for cupon in activos:
-        dias = dias_semana.normalizar_dia_semana(cupon.get("dia_semana"))
+        texto_dia = cupon.get("dia_semana")
+        if texto_dia is None:
+            sin_dia_confirmado.setdefault(cupon["comercio"], []).append(cupon)
+            continue
+        dias = dias_semana.normalizar_dia_semana(texto_dia)
         if "todos" in dias:
-            todos_los_dias.append(cupon)
+            todos_confirmado.append(cupon)
         elif dias_semana.dia_aplica_hoy(dias, hoy):
             hoy_por_comercio.setdefault(cupon["comercio"], []).append(cupon)
 
-    if not any(hoy_por_comercio.values()) and not todos_los_dias:
+    if (
+        not any(hoy_por_comercio.values())
+        and not todos_confirmado
+        and not any(sin_dia_confirmado.values())
+    ):
         return None
-    return {"hoy": hoy_por_comercio, "todos": todos_los_dias}
+    return {"hoy": hoy_por_comercio, "todos": todos_confirmado, "sin_dia": sin_dia_confirmado}

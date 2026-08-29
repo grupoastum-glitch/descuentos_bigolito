@@ -159,9 +159,22 @@ def _extracto_digest(texto: str | None, maximo: int = _EXTRACTO_DIGEST_MAX) -> s
     return limpio if len(limpio) <= maximo else limpio[: maximo - 1].rstrip() + "…"
 
 
+def _socio_distinto(cupon: dict) -> bool:
+    """True si vale la pena mostrar el socio aparte del título — no si está vacío, es el
+    genérico "General"/nombre del comercio, o (caso real: "Mach") es literalmente el mismo
+    texto que el título, lo que se vería como "🏦 Mach — Mach"."""
+    socio = cupon.get("socio")
+    if not socio or socio in ("General", cupon["comercio"]):
+        return False
+    return socio.strip().casefold() != cupon["titulo"].strip().casefold()
+
+
 def _linea_cupon_digest(cupon: dict, con_extracto: bool) -> str:
+    """Formato completo (título + extracto de descripción opcional) — solo para la sección de
+    HOY, la razón de ser del digest. Ver _linea_cupon_compacta para las secciones secundarias
+    (todos los días / día no confirmado), que no lo necesitan cada día."""
     titulo = html.escape(cupon["titulo"])
-    if cupon.get("socio") and cupon["socio"] not in ("General", cupon["comercio"]):
+    if _socio_distinto(cupon):
         linea = f"🏦 <b>{html.escape(cupon['socio'])}</b> — {titulo}"
     else:
         linea = f"🏦 <b>{titulo}</b>"
@@ -172,36 +185,63 @@ def _linea_cupon_digest(cupon: dict, con_extracto: bool) -> str:
     return linea
 
 
+def _linea_cupon_compacta(cupon: dict) -> str:
+    """Una línea por cupón, sin descripción — para las secciones secundarias del digest (info de
+    referencia que se repite todos los días, no hace falta el detalle completo cada vez)."""
+    titulo = html.escape(cupon["titulo"])
+    if _socio_distinto(cupon):
+        return f"• <b>{html.escape(cupon['socio'])}</b> — {titulo}"
+    return f"• {titulo}"
+
+
 def formatear_digest_cupones(grupos: dict | None) -> str | None:
     """Arma el mensaje de texto plano del digest diario de cupones de combustible (ver
-    scraper/cupones_writer.py::construir_grupos_digest) — `grupos["hoy"]` es un dict
-    {comercio: [cupones vigentes hoy]}, `grupos["todos"]` es la lista combinada (ambos comercios)
-    de los que aplican todos los días. None si no hay nada que mostrar.
+    scraper/cupones_writer.py::construir_grupos_digest) — 3 grupos:
+
+    - `grupos["hoy"]`: dict {comercio: [cupones de día específico vigentes hoy]} — formato
+      completo (título + extracto), es la razón de ser del digest.
+    - `grupos["todos"]`: lista combinada (ambos comercios) de cupones CONFIRMADOS como "todos los
+      días" por la fuente — formato compacto (una línea, sin extracto).
+    - `grupos["sin_dia"]`: dict {comercio: [cupones sin día detectado]} — mismo formato compacto,
+      pero en su propia sección con la incertidumbre explícita en el título ("día no confirmado"):
+      tratarlos igual que "todos los días" sería decirle al usuario algo que no sabemos que sea
+      cierto (ver cupones_writer.construir_grupos_digest).
+
+    None si no hay nada que mostrar en ningún grupo.
 
     Backstop de largo en 3 niveles (límite real de un mensaje de texto: 4096, no 1024 como una
-    foto): con extracto de descripción por cupón -> si se pasa de ~3800 caracteres, solo títulos
-    -> backstop final [:4096]."""
-    if not grupos or not (any(grupos["hoy"].values()) or grupos["todos"]):
+    foto) — solo afecta la sección de HOY (las secundarias ya son compactas siempre): con extracto
+    de descripción por cupón -> si se pasa de ~3800 caracteres, solo títulos -> backstop final
+    [:4096]."""
+    if not grupos or not (
+        any(grupos["hoy"].values()) or grupos["todos"] or any(grupos["sin_dia"].values())
+    ):
         return None
 
     hoy_capitalizado = dias_semana.nombre_dia_chile().capitalize()
     fecha = datetime.now(config.TZ_CHILE).strftime("%d/%m")
 
-    def _armar(con_extracto: bool) -> str:
+    def _armar(con_extracto_hoy: bool) -> str:
         lineas = [f"⛽🎟️ Cupones combustible de hoy — {hoy_capitalizado} {fecha}"]
         for comercio, cupones in grupos["hoy"].items():
             if not cupones:
                 continue
             lineas += ["", f"<b>{_ETIQUETA_COMERCIO_DIGEST.get(comercio, comercio)}</b>"]
-            lineas += [_linea_cupon_digest(c, con_extracto) for c in cupones]
+            lineas += [_linea_cupon_digest(c, con_extracto_hoy) for c in cupones]
         if grupos["todos"]:
             lineas += ["", "<b>🔁 Todos los días</b>"]
-            lineas += [_linea_cupon_digest(c, con_extracto) for c in grupos["todos"]]
+            lineas += [_linea_cupon_compacta(c) for c in grupos["todos"]]
+        for comercio, cupones in grupos["sin_dia"].items():
+            if not cupones:
+                continue
+            etiqueta = _ETIQUETA_COMERCIO_DIGEST.get(comercio, comercio)
+            lineas += ["", f"<b>{etiqueta} (día no confirmado — revisa vigencia en la app)</b>"]
+            lineas += [_linea_cupon_compacta(c) for c in cupones]
         return "\n".join(lineas)
 
-    texto = _armar(con_extracto=True)
+    texto = _armar(con_extracto_hoy=True)
     if len(texto) > 3800:
-        texto = _armar(con_extracto=False)
+        texto = _armar(con_extracto_hoy=False)
     return texto[:4096]
 
 

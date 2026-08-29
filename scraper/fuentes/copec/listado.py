@@ -26,10 +26,20 @@ La página mezcla cupones de combustible con otros beneficios de Full Copec no r
 (ej. "Pide tu Tarjeta de Crédito Bci con nosotros", "Beneficios MITTA Rent a Car") — no hay un tag
 de categoría "Combustible" como en Shell (el filtro de categoría real del sitio es
 "Medios de Pago"/"Aliados Copec"/"Socios conductores", no por rubro), así que se filtra por texto:
-se descarta la card si ni el título ni la descripción mencionan "litro"/"combustible"/"estanque"
-(cubre las 18 cards reales vistas al implementar esto, incluida "Mach", cuyo título no lo
-menciona pero su descripción sí). No se detectó paginación — la página trae todas las promos
-vigentes en una sola carga.
+se descarta la card si ni el título ni la descripción mencionan "litro"/"combustible" (cubre las
+18 cards reales vistas al implementar esto, incluida "Mach", cuyo título no lo menciona pero su
+descripción sí).
+
+Ese filtro de inclusión no alcanza solo: "Pide tu Tarjeta de Crédito Bci con nosotros" (promo de
+adquisición de tarjeta, no un descuento recurrente) coló la primera vez por mencionar "estanque
+gratis" — se sacó "estanque" del patrón de inclusión, ninguna promo genuina lo necesita. "Beneficios
+MITTA Rent a Car" (arriendo de auto) sí dice literalmente "descuento por litro de combustible" en
+su texto — un filtro de puro texto no puede distinguirlo de un cupón genuino, así que se suma un
+patrón de EXCLUSIÓN explícito (`_EXCLUSION_RE`, mismo criterio pragmático que
+`scraper/fuentes/gympro/listado.py::_TITULO_EXCLUIDO_RE`) para estos casos conocidos — lista a
+ampliar si aparecen más falsos positivos, no hay una señal estructurada limpia para esto.
+
+No se detectó paginación — la página trae todas las promos vigentes en una sola carga.
 """
 from __future__ import annotations
 
@@ -39,7 +49,8 @@ import re
 log = logging.getLogger("scraper.fuentes.copec")
 
 _URL_PROMOCIONES = "https://ww2.copec.cl/personas/promociones"
-_PALABRAS_COMBUSTIBLE_RE = re.compile(r"litro|combustible|estanque", re.I)
+_PALABRAS_COMBUSTIBLE_RE = re.compile(r"litro|combustible", re.I)
+_EXCLUSION_RE = re.compile(r"tarjeta de cr[eé]dito.*con nosotros|rent a car|arrendar", re.I)
 
 
 def _item_desde_card(card) -> dict | None:
@@ -53,7 +64,8 @@ def _item_desde_card(card) -> dict | None:
     descripcion_nodo = card.css(".card-body p.text-normal.text-gray-50")
     descripcion = descripcion_nodo[0].get_all_text(strip=True) if descripcion_nodo else ""
 
-    if not _PALABRAS_COMBUSTIBLE_RE.search(f"{titulo} {descripcion}"):
+    texto_completo = f"{titulo} {descripcion}"
+    if not _PALABRAS_COMBUSTIBLE_RE.search(texto_completo) or _EXCLUSION_RE.search(texto_completo):
         return None
 
     logo_nodo = card.css("img.card-logo")
