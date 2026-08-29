@@ -131,6 +131,13 @@ TIENDAS_FITNESS = {"decathlon", "sparta", "gympro", "nike"}  # Nike sumada 2026-
 # cayeron en Retail General por defecto (ABC/H&M/Fensa)
 UMBRAL_DESCUENTO_FITNESS = 25  # mismo piso que Tech/Mascotas — decisión 2026-08-22
 
+# cada cuántas horas se le da otra chance a un cupón de combustible (Copec/Shell) que sigue
+# vigente y sin cambios desde la última vez que se publicó — mismo espíritu que
+# HORAS_REPUBLICACION_REGLA3 de productos, pero sin lógica de récord histórico (ver
+# scraper/cupones_writer.py, que no usa TIENDAS/_CANAL_ESPECIAL_POR_TIENDA: el canal de un cupón
+# es fijo, sin tramos ni umbral de descuento).
+HORAS_REPUBLICACION_CUPON = 24
+
 # cada cuántas horas se le da otra chance a un producto que sigue siendo récord (precio mínimo o
 # mayor descuento) pero no cambió desde la última vez que se publicó — evita que ofertas buenas
 # queden "enterradas" para suscriptores nuevos. Sin tope de publicaciones por día: un producto
@@ -171,6 +178,9 @@ CANAL_TELEGRAM_USERNAME = {
     "ofertas_geek": "-1003952570153",
     "ofertas_deco_hogar": "-1003961858440",
     "ofertas_tech": "-1004332754687",
+    "ofertas_combustible": "-1004339913654",  # canal Copec/Shell (ver scraper/cupones_writer.py)
+    # — creado 2026-08-28, privado. Sumar esta entrada es lo que activa el bloque de cupones en
+    # main.py (ver el guard `if config.CANAL_TELEGRAM_USERNAME.get("ofertas_combustible")`).
     "ofertas_mascotas": "-1004304511002",
     "ofertas_fitness": "-1004357028199",
     "ofertas_top": "-1004484005134",

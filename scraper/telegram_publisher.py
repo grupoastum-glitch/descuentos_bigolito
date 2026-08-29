@@ -144,6 +144,35 @@ def _formatear_caption(oferta: dict) -> str:
     return "\n".join(lineas)[:1024]
 
 
+def _formatear_caption_cupon(cupon: dict) -> str:
+    """Caption paralelo a _formatear_caption, para cupones de combustible (ver
+    scraper/cupones_writer.py) — sin precio/descuento_pct/historial, esos campos no existen para
+    un cupón. La condición real (monto, código, cómo activarlo) casi siempre vive en el texto
+    libre de `descripcion` (las fuentes no separan esos datos en campos propios, ver
+    scraper/fuentes/copec|shell/listado.py), así que el caption se arma mostrando
+    título+descripción tal cual en vez de intentar reconstruir una línea de "monto" aparte."""
+    titulo = html.escape(cupon["titulo"])
+    url = html.escape(cupon["url"])
+    hashtag_comercio = cupon["comercio"].replace(" ", "")
+
+    lineas = [f"⛽ #{hashtag_comercio} 🎟️ Cupón de descuento"]
+    if cupon.get("socio") and cupon["socio"] not in ("General", cupon["comercio"]):
+        lineas.append(f"🏦 {html.escape(cupon['socio'])}")
+    lineas += ["", titulo]
+
+    if cupon.get("descripcion"):
+        lineas += ["", html.escape(cupon["descripcion"])]
+    if cupon.get("dia_semana"):
+        lineas.append(f"📅 {html.escape(cupon['dia_semana'])}")
+    if cupon.get("vigencia_hasta"):
+        lineas.append(f"⏳ Vigente hasta {html.escape(cupon['vigencia_hasta'])}")
+    if cupon.get("codigo"):
+        lineas.append(f"🔑 Código: {html.escape(cupon['codigo'])}")
+
+    lineas += ["", f'🔗 <a href="{url}">MÁS DETALLES</a> 👈 👀']
+    return "\n".join(lineas)[:1024]
+
+
 async def avisar_admin(mensaje: str) -> bool:
     """Manda un mensaje de texto plano a TELEGRAM_ADMIN_CHAT_ID (avisos operativos, no ofertas).
     Si no está configurado, solo queda en el log — no rompe la corrida. Devuelve True si el envío
@@ -175,7 +204,7 @@ async def _enviar_con_reintento(bot: Bot, chat_id: str, oferta: dict) -> bool:
     Para los comercios de _COMERCIOS_CON_CDN_BLOQUEADO, la imagen se descarga acá mismo y se
     sube como bytes en vez de pasarle la URL a Telegram (ver _descargar_imagen) — al resto de
     las tiendas no se les toca el comportamiento, siguen mandando la URL directa como siempre."""
-    texto = _formatear_caption(oferta)
+    texto = _formatear_caption_cupon(oferta) if oferta.get("tipo") == "cupon" else _formatear_caption(oferta)
     for intento in range(config.TELEGRAM_REINTENTOS_MAX + 1):
         try:
             imagen = oferta.get("imagen")

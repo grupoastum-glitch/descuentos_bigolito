@@ -76,6 +76,39 @@ CREATE TABLE IF NOT EXISTS pausa_manual (
     activa BOOLEAN NOT NULL DEFAULT false,
     actualizado_en TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Cupones/descuentos de combustible (Copec/Shell — ver scraper/cupones_writer.py). Tabla separada
+-- de `productos`: un cupón no tiene precio propio, así que no aplican las Reglas 1/2/3 ni
+-- historial_precios. `hash_contenido` es el estado observado (se actualiza cada corrida);
+-- `hash_publicado` es el último hash con el que Telegram CONFIRMÓ el envío (solo lo toca
+-- registrar_cupon_publicado) — separados a propósito, ver docstring de cupones_writer.py.
+CREATE TABLE IF NOT EXISTS cupones_combustible (
+    id                   TEXT PRIMARY KEY,
+    tienda_id            TEXT NOT NULL,
+    comercio             TEXT NOT NULL,
+    socio                TEXT,
+    titulo               TEXT NOT NULL,
+    descripcion          TEXT,
+    tipo_descuento       TEXT,
+    valor_descuento      INTEGER,
+    tope_clp             INTEGER,
+    dia_semana           TEXT,
+    vigencia_desde       TEXT,
+    vigencia_hasta       TEXT,
+    codigo               TEXT,
+    como_activar         TEXT,
+    url_fuente           TEXT NOT NULL,
+    imagen               TEXT,
+    hash_contenido       TEXT NOT NULL,
+    hash_publicado       TEXT,
+    primera_deteccion    TIMESTAMPTZ NOT NULL,
+    ultima_actualizacion TIMESTAMPTZ NOT NULL,
+    ultima_publicacion   TIMESTAMPTZ,
+    activo               BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE INDEX IF NOT EXISTS ix_cupones_tienda_activo
+    ON cupones_combustible (tienda_id, activo);
 """
 
 _pool: asyncpg.Pool | None = None
@@ -328,3 +361,84 @@ async def pausa_manual_activa(pool: asyncpg.Pool) -> bool:
     async with pool.acquire() as con:
         fila = await con.fetchrow("SELECT activa FROM pausa_manual WHERE id = 1")
     return bool(fila["activa"]) if fila else False
+
+
+async def cargar_cupones(pool: asyncpg.Pool, ids: list[str]) -> dict[str, dict]:
+    """Trae SOLO los cupones pedidos (los detectados HOY para una tienda) — ver
+    cargar_productos_con_historial, mismo criterio. Devuelve {id: {...columnas...}}, con
+    ultima_publicacion en ISO string (None si el cupón nunca se confirmó publicado)."""
+    if not ids:
+        return {}
+    async with pool.acquire() as con:
+        filas = await con.fetch("SELECT * FROM cupones_combustible WHERE id = ANY($1::text[])", ids)
+    resultado = {}
+    for fila in filas:
+        registro = dict(fila)
+        registro["primera_deteccion"] = fila["primera_deteccion"].strftime("%Y-%m-%dT%H:%M:%SZ")
+        registro["ultima_actualizacion"] = fila["ultima_actualizacion"].strftime("%Y-%m-%dT%H:%M:%SZ")
+        registro["ultima_publicacion"] = (
+            fila["ultima_publicacion"].strftime("%Y-%m-%dT%H:%M:%SZ") if fila["ultima_publicacion"] else None
+        )
+        resultado[fila["id"]] = registro
+    return resultado
+
+
+async def upsert_cupones(pool: asyncpg.Pool, registros: list[dict]) -> None:
+    """UPSERT bulk de los cupones tocados en esta corrida. NO toca hash_publicado/
+    ultima_publicacion — eso solo lo actualiza marcar_cupon_publicado, tras confirmación real de
+    Telegram (ver cupones_writer.py)."""
+    if not registros:
+        return
+    filas = [
+        (
+            r["id"], r["tienda_id"], r["comercio"], r["socio"], r["titulo"], r["descripcion"],
+            r["tipo_descuento"], r["valor_descuento"], r["tope_clp"], r["dia_semana"],
+            r["vigencia_desde"], r["vigencia_hasta"], r["codigo"], r["como_activar"],
+            r["url_fuente"], r["imagen"], r["hash_contenido"],
+            _parse_iso(r["primera_deteccion"]), _parse_iso(r["ultima_actualizacion"]), r["activo"],
+        )
+        for r in registros
+    ]
+    async with pool.acquire() as con:
+        await con.executemany(
+            """INSERT INTO cupones_combustible (
+                   id, tienda_id, comercio, socio, titulo, descripcion, tipo_descuento,
+                   valor_descuento, tope_clp, dia_semana, vigencia_desde, vigencia_hasta, codigo,
+                   como_activar, url_fuente, imagen, hash_contenido,
+                   primera_deteccion, ultima_actualizacion, activo
+               )
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+               ON CONFLICT (id) DO UPDATE SET
+                   comercio = EXCLUDED.comercio, socio = EXCLUDED.socio, titulo = EXCLUDED.titulo,
+                   descripcion = EXCLUDED.descripcion, tipo_descuento = EXCLUDED.tipo_descuento,
+                   valor_descuento = EXCLUDED.valor_descuento, tope_clp = EXCLUDED.tope_clp,
+                   dia_semana = EXCLUDED.dia_semana, vigencia_desde = EXCLUDED.vigencia_desde,
+                   vigencia_hasta = EXCLUDED.vigencia_hasta, codigo = EXCLUDED.codigo,
+                   como_activar = EXCLUDED.como_activar, url_fuente = EXCLUDED.url_fuente,
+                   imagen = EXCLUDED.imagen, hash_contenido = EXCLUDED.hash_contenido,
+                   ultima_actualizacion = EXCLUDED.ultima_actualizacion, activo = EXCLUDED.activo""",
+            filas,
+        )
+
+
+async def marcar_cupones_inactivos(pool: asyncpg.Pool, tienda_id: str, ids_vistos_hoy: list[str]) -> None:
+    """Marca activo=FALSE a los cupones de `tienda_id` no vistos en esta corrida — sin período de
+    gracia (a diferencia de marcar_inactivos de productos): Copec y Shell se leen completos cada
+    corrida, no por muestreo, así que "no visto" sí significa "ya no está vigente"."""
+    async with pool.acquire() as con:
+        await con.execute(
+            """UPDATE cupones_combustible SET activo = FALSE
+               WHERE tienda_id = $1 AND activo = TRUE AND NOT (id = ANY($2::text[]))""",
+            tienda_id, ids_vistos_hoy,
+        )
+
+
+async def marcar_cupon_publicado(pool: asyncpg.Pool, cupon_id: str, hash_contenido: str) -> None:
+    """Callback de cupones_writer.registrar_cupon_publicado — se llama una vez por cada cupón que
+    Telegram confirma que se mandó de verdad."""
+    async with pool.acquire() as con:
+        await con.execute(
+            """UPDATE cupones_combustible SET hash_publicado = $2, ultima_publicacion = now()
+               WHERE id = $1""",
+            cupon_id, hash_contenido,
+        )
