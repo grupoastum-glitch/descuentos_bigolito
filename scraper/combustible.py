@@ -18,6 +18,10 @@ no recién cuando el resto del scraper despierta a las 07:00.
 Idempotente sin estados intermedios: si el envío a Telegram falla, no se marca
 `cupones_digest_enviado` y la próxima corrida del cron reintenta desde cero (re-scrapea, reconstruye
 el digest, reintenta mandarlo) — no hace falta persistir un estado "a medias".
+
+Override manual: `config.FORZAR_DIGEST_COMBUSTIBLE=1` salta el chequeo "¿ya se mandó hoy?" — para
+poder apretar "Run Now" en Railway y ver el resultado al toque en vez de esperar al día siguiente.
+Acordarse de apagarlo después: mientras esté en 1, TODAS las corridas reenvían, no solo la manual.
 """
 from __future__ import annotations
 
@@ -79,7 +83,12 @@ async def _correr() -> None:
         await _scrapear_y_actualizar_snapshot(pool)
 
         hoy = datetime.now(config.TZ_CHILE).date()
-        if await db.digest_enviado_hoy(pool, hoy):
+        if config.FORZAR_DIGEST_COMBUSTIBLE:
+            log.warning(
+                "FORZAR_DIGEST_COMBUSTIBLE activo: se ignora el chequeo de \"ya se mandó hoy\" — "
+                "acordarse de apagarlo después de probar, si no el cron lo va a reenviar cada vez."
+            )
+        elif await db.digest_enviado_hoy(pool, hoy):
             log.info("El digest de hoy (%s) ya se mandó, nada más que hacer.", hoy)
             return
 

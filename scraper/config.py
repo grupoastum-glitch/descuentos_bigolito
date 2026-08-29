@@ -248,6 +248,14 @@ SCRAPER_NOMBRE = os.environ.get("SCRAPER_NOMBRE", "")
 SCRAPER_TIENDAS = os.environ.get("SCRAPER_TIENDAS", "")  # ids separados por coma (ver TIENDAS
 # abajo), ej. "luffytoys,geekz,weplay". Vacío = todas (instancia única de hoy).
 
+# Override manual para scraper/combustible.py: "1" hace que ignore el chequeo "¿ya se mandó el
+# digest hoy?" y lo reconstruya/reenvíe igual — pensado para poder apretar "Run Now" en Railway y
+# ver el resultado al toque, sin esperar al día siguiente. OJO: mientras esté en "1", TODAS las
+# corridas (también las automáticas del cron) van a reenviar el digest, no solo la manual — hay
+# que volver a poner esta variable en "0" (o borrarla) después de probar, si no el canal recibe
+# un digest repetido en cada tick del cron.
+FORZAR_DIGEST_COMBUSTIBLE = os.environ.get("FORZAR_DIGEST_COMBUSTIBLE", "") == "1"
+
 # --- Telegram ---
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 # chat_id (privado o de un grupo/canal admin) donde avisar problemas operativos, ej. el
