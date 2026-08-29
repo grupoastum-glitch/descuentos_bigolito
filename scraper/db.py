@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import asyncpg
 
@@ -79,9 +79,9 @@ CREATE TABLE IF NOT EXISTS pausa_manual (
 
 -- Cupones/descuentos de combustible (Copec/Shell — ver scraper/cupones_writer.py). Tabla separada
 -- de `productos`: un cupón no tiene precio propio, así que no aplican las Reglas 1/2/3 ni
--- historial_precios. `hash_contenido` es el estado observado (se actualiza cada corrida);
--- `hash_publicado` es el último hash con el que Telegram CONFIRMÓ el envío (solo lo toca
--- registrar_cupon_publicado) — separados a propósito, ver docstring de cupones_writer.py.
+-- historial_precios. Es un snapshot simple del estado actual (upsert cada corrida del servicio
+-- dedicado scraper/combustible.py) — la decisión de qué publicar no es "por cupón" (ver el digest
+-- diario más abajo), así que no hace falta trackear hash de contenido ni fecha de publicación acá.
 CREATE TABLE IF NOT EXISTS cupones_combustible (
     id                   TEXT PRIMARY KEY,
     tienda_id            TEXT NOT NULL,
@@ -99,16 +99,29 @@ CREATE TABLE IF NOT EXISTS cupones_combustible (
     como_activar         TEXT,
     url_fuente           TEXT NOT NULL,
     imagen               TEXT,
-    hash_contenido       TEXT NOT NULL,
-    hash_publicado       TEXT,
     primera_deteccion    TIMESTAMPTZ NOT NULL,
     ultima_actualizacion TIMESTAMPTZ NOT NULL,
-    ultima_publicacion   TIMESTAMPTZ,
     activo               BOOLEAN NOT NULL DEFAULT TRUE
 );
 
+-- Tabla ya desplegada con el modelo viejo (post individual por cupón, con recordatorio por hash)
+-- — se sacan esas columnas en vez de dejarlas sin usar, mismo patrón idempotente que el resto de
+-- este archivo (ver admin_alerta_precio/admin_alerta_descuento_pct más arriba).
+ALTER TABLE cupones_combustible DROP COLUMN IF EXISTS hash_contenido;
+ALTER TABLE cupones_combustible DROP COLUMN IF EXISTS hash_publicado;
+ALTER TABLE cupones_combustible DROP COLUMN IF EXISTS ultima_publicacion;
+
 CREATE INDEX IF NOT EXISTS ix_cupones_tienda_activo
     ON cupones_combustible (tienda_id, activo);
+
+-- Marca qué día ya se mandó el digest diario de cupones de combustible (ver
+-- scraper/combustible.py) — evita mandar dos veces el mismo día si el servicio corre más de una
+-- vez. Sin estados intermedios (no hay cola de por medio, el envío es directo y síncrono): solo
+-- se inserta la fila una vez que Telegram confirmó el envío.
+CREATE TABLE IF NOT EXISTS cupones_digest_enviado (
+    fecha      DATE PRIMARY KEY,
+    enviado_en TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 _pool: asyncpg.Pool | None = None
@@ -365,8 +378,7 @@ async def pausa_manual_activa(pool: asyncpg.Pool) -> bool:
 
 async def cargar_cupones(pool: asyncpg.Pool, ids: list[str]) -> dict[str, dict]:
     """Trae SOLO los cupones pedidos (los detectados HOY para una tienda) — ver
-    cargar_productos_con_historial, mismo criterio. Devuelve {id: {...columnas...}}, con
-    ultima_publicacion en ISO string (None si el cupón nunca se confirmó publicado)."""
+    cargar_productos_con_historial, mismo criterio. Devuelve {id: {...columnas...}}."""
     if not ids:
         return {}
     async with pool.acquire() as con:
@@ -376,17 +388,23 @@ async def cargar_cupones(pool: asyncpg.Pool, ids: list[str]) -> dict[str, dict]:
         registro = dict(fila)
         registro["primera_deteccion"] = fila["primera_deteccion"].strftime("%Y-%m-%dT%H:%M:%SZ")
         registro["ultima_actualizacion"] = fila["ultima_actualizacion"].strftime("%Y-%m-%dT%H:%M:%SZ")
-        registro["ultima_publicacion"] = (
-            fila["ultima_publicacion"].strftime("%Y-%m-%dT%H:%M:%SZ") if fila["ultima_publicacion"] else None
-        )
         resultado[fila["id"]] = registro
     return resultado
 
 
+async def cargar_cupones_activos(pool: asyncpg.Pool) -> list[dict]:
+    """Snapshot completo de cupones activos (ambos comercios) — usado por scraper/combustible.py
+    para armar el digest diario, independiente de qué tienda se scrapeó en esta corrida puntual."""
+    async with pool.acquire() as con:
+        filas = await con.fetch(
+            "SELECT * FROM cupones_combustible WHERE activo ORDER BY comercio, socio, titulo",
+        )
+    return [dict(fila) for fila in filas]
+
+
 async def upsert_cupones(pool: asyncpg.Pool, registros: list[dict]) -> None:
-    """UPSERT bulk de los cupones tocados en esta corrida. NO toca hash_publicado/
-    ultima_publicacion — eso solo lo actualiza marcar_cupon_publicado, tras confirmación real de
-    Telegram (ver cupones_writer.py)."""
+    """UPSERT bulk de los cupones tocados en esta corrida (snapshot simple, ver docstring del
+    DDL en _DDL)."""
     if not registros:
         return
     filas = [
@@ -394,7 +412,7 @@ async def upsert_cupones(pool: asyncpg.Pool, registros: list[dict]) -> None:
             r["id"], r["tienda_id"], r["comercio"], r["socio"], r["titulo"], r["descripcion"],
             r["tipo_descuento"], r["valor_descuento"], r["tope_clp"], r["dia_semana"],
             r["vigencia_desde"], r["vigencia_hasta"], r["codigo"], r["como_activar"],
-            r["url_fuente"], r["imagen"], r["hash_contenido"],
+            r["url_fuente"], r["imagen"],
             _parse_iso(r["primera_deteccion"]), _parse_iso(r["ultima_actualizacion"]), r["activo"],
         )
         for r in registros
@@ -404,10 +422,10 @@ async def upsert_cupones(pool: asyncpg.Pool, registros: list[dict]) -> None:
             """INSERT INTO cupones_combustible (
                    id, tienda_id, comercio, socio, titulo, descripcion, tipo_descuento,
                    valor_descuento, tope_clp, dia_semana, vigencia_desde, vigencia_hasta, codigo,
-                   como_activar, url_fuente, imagen, hash_contenido,
+                   como_activar, url_fuente, imagen,
                    primera_deteccion, ultima_actualizacion, activo
                )
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
                ON CONFLICT (id) DO UPDATE SET
                    comercio = EXCLUDED.comercio, socio = EXCLUDED.socio, titulo = EXCLUDED.titulo,
                    descripcion = EXCLUDED.descripcion, tipo_descuento = EXCLUDED.tipo_descuento,
@@ -415,7 +433,7 @@ async def upsert_cupones(pool: asyncpg.Pool, registros: list[dict]) -> None:
                    dia_semana = EXCLUDED.dia_semana, vigencia_desde = EXCLUDED.vigencia_desde,
                    vigencia_hasta = EXCLUDED.vigencia_hasta, codigo = EXCLUDED.codigo,
                    como_activar = EXCLUDED.como_activar, url_fuente = EXCLUDED.url_fuente,
-                   imagen = EXCLUDED.imagen, hash_contenido = EXCLUDED.hash_contenido,
+                   imagen = EXCLUDED.imagen,
                    ultima_actualizacion = EXCLUDED.ultima_actualizacion, activo = EXCLUDED.activo""",
             filas,
         )
@@ -433,12 +451,20 @@ async def marcar_cupones_inactivos(pool: asyncpg.Pool, tienda_id: str, ids_visto
         )
 
 
-async def marcar_cupon_publicado(pool: asyncpg.Pool, cupon_id: str, hash_contenido: str) -> None:
-    """Callback de cupones_writer.registrar_cupon_publicado — se llama una vez por cada cupón que
-    Telegram confirma que se mandó de verdad."""
+async def digest_enviado_hoy(pool: asyncpg.Pool, fecha: date) -> bool:
+    """Ver scraper/combustible.py — evita mandar dos veces el digest el mismo día si el servicio
+    corre más de una vez."""
+    async with pool.acquire() as con:
+        fila = await con.fetchrow("SELECT 1 FROM cupones_digest_enviado WHERE fecha = $1", fecha)
+    return fila is not None
+
+
+async def marcar_digest_enviado(pool: asyncpg.Pool, fecha: date) -> None:
+    """Se llama SOLO tras confirmar que Telegram mandó el digest de verdad (ver
+    scraper/combustible.py) — si el envío falla, no se marca, y la próxima corrida reintenta
+    desde cero."""
     async with pool.acquire() as con:
         await con.execute(
-            """UPDATE cupones_combustible SET hash_publicado = $2, ultima_publicacion = now()
-               WHERE id = $1""",
-            cupon_id, hash_contenido,
+            "INSERT INTO cupones_digest_enviado (fecha) VALUES ($1) ON CONFLICT (fecha) DO NOTHING",
+            fecha,
         )

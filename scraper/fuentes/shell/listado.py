@@ -23,12 +23,21 @@ Cada card (`div.beneficio-card`) trae:
   "30 septiembre 2026"); el segundo `.beneficio-card__meta` de la card no es vigencia (a veces
   vacío, a veces un tag suelto tipo "Upa!") y se ignora.
 
+Shell no expone ningún campo de día de la semana (a diferencia de Copec, que sí trae `tag-dia`) —
+el día casi siempre está mencionado en prosa dentro del título/descripción (ej. "Los jueves es
+Diésel en Shell"), así que se infiere con `dias_semana.inferir_dia_semana_texto()` sobre
+título+descripción — usado por el digest diario (ver scraper/cupones_writer.py) para decidir si
+este cupón aplica hoy. Si no se detecta ningún día, `dia_semana` queda en `None` (el digest lo
+trata como "todos los días").
+
 No hay link individual por card (confirmado: ningún `<a>` dentro de `.beneficio-card`) — todas las
 promos comparten `url_fuente` = la página de beneficios.
 """
 from __future__ import annotations
 
 import logging
+
+import dias_semana
 
 log = logging.getLogger("scraper.fuentes.shell")
 
@@ -75,7 +84,7 @@ def _item_desde_card(card) -> dict | None:
         "tipo_descuento": None,
         "valor_descuento": None,
         "tope_clp": None,
-        "dia_semana": None,
+        "dia_semana": dias_semana.inferir_dia_semana_texto(titulo, descripcion),
         "vigencia_desde": None,
         "vigencia_hasta": _texto_meta_vigencia(card),
         "codigo": None,

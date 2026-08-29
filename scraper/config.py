@@ -131,13 +131,6 @@ TIENDAS_FITNESS = {"decathlon", "sparta", "gympro", "nike"}  # Nike sumada 2026-
 # cayeron en Retail General por defecto (ABC/H&M/Fensa)
 UMBRAL_DESCUENTO_FITNESS = 25  # mismo piso que Tech/Mascotas — decisión 2026-08-22
 
-# cada cuántas horas se le da otra chance a un cupón de combustible (Copec/Shell) que sigue
-# vigente y sin cambios desde la última vez que se publicó — mismo espíritu que
-# HORAS_REPUBLICACION_REGLA3 de productos, pero sin lógica de récord histórico (ver
-# scraper/cupones_writer.py, que no usa TIENDAS/_CANAL_ESPECIAL_POR_TIENDA: el canal de un cupón
-# es fijo, sin tramos ni umbral de descuento).
-HORAS_REPUBLICACION_CUPON = 24
-
 # cada cuántas horas se le da otra chance a un producto que sigue siendo récord (precio mínimo o
 # mayor descuento) pero no cambió desde la última vez que se publicó — evita que ofertas buenas
 # queden "enterradas" para suscriptores nuevos. Sin tope de publicaciones por día: un producto

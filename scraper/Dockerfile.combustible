@@ -1,0 +1,13 @@
+FROM python:3.11-slim
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+COPY scraper/requirements.txt scraper/requirements.txt
+RUN pip install --no-cache-dir -r scraper/requirements.txt
+# A diferencia de scraper/Dockerfile, acá NO se instala Chromium (patchright) — combustible.py
+# scrapea Copec/Shell con FetcherSession simple (HTML renderizado en servidor, confirmado con
+# curl), sin necesidad de navegador headless. Mismo motivo que Dockerfile.publicar.
+COPY scraper/ scraper/
+
+WORKDIR /app/scraper
+CMD ["python", "combustible.py"]

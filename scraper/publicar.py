@@ -27,7 +27,6 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
 import config  # noqa: E402 (después de load_dotenv a propósito, config lee os.environ)
-import cupones_writer  # noqa: E402
 import db  # noqa: E402
 import ofertas_writer  # noqa: E402
 import run_lock  # noqa: E402
@@ -56,12 +55,8 @@ async def _drenar_una_vez(pool) -> bool:
 
     async def _on_publicada(oferta: dict) -> None:
         # mismo callback que usaba main.py antes de este cambio — persiste el evento de
-        # historial al toque, no al final del lote. Los cupones de combustible (ver
-        # cupones_writer.py) no tienen precio_actual/puede_reusar_fila — se registran aparte.
-        if oferta.get("tipo") == "cupon":
-            await cupones_writer.registrar_cupon_publicado(pool, oferta)
-        else:
-            await ofertas_writer.registrar_evento_publicado(pool, oferta)
+        # historial al toque, no al final del lote.
+        await ofertas_writer.registrar_evento_publicado(pool, oferta)
         await db.marcar_publicada(pool, oferta["_cola_id"])
 
     await telegram_publisher.publicar_ofertas_nuevas(pendientes, on_publicada=_on_publicada)

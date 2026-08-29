@@ -29,7 +29,6 @@ from scrapling.fetchers import FetcherSession, StealthySession
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
 import config  # noqa: E402 (después de load_dotenv a propósito, config lee os.environ)
-import cupones_writer  # noqa: E402
 import db  # noqa: E402
 import descubrimiento  # noqa: E402
 import git_publish  # noqa: E402
@@ -41,7 +40,6 @@ from fuentes.abc.listado import obtener_ofertas_abc  # noqa: E402
 from fuentes.bestmart.listado import obtener_ofertas_bestmart  # noqa: E402
 from fuentes.caterpillar.listado import obtener_ofertas_caterpillar  # noqa: E402
 from fuentes.clubdeperrosygatos.listado import obtener_ofertas_clubdeperrosygatos  # noqa: E402
-from fuentes.copec.listado import obtener_cupones_copec  # noqa: E402
 from fuentes.decathlon.listado import obtener_ofertas_decathlon  # noqa: E402
 from fuentes.dust2.listado import obtener_ofertas_dust2  # noqa: E402
 from fuentes.easy.listado import obtener_ofertas_easy  # noqa: E402
@@ -62,7 +60,6 @@ from fuentes.pcfactory.listado import obtener_ofertas_pcfactory  # noqa: E402
 from fuentes.pethome.listado import obtener_ofertas_pethome  # noqa: E402
 from fuentes.petsonline.listado import obtener_ofertas_petsonline  # noqa: E402
 from fuentes.ripley.listado import obtener_ofertas_ripley  # noqa: E402
-from fuentes.shell.listado import obtener_cupones_shell  # noqa: E402
 from fuentes.sipoonline.listado import obtener_ofertas_sipoonline  # noqa: E402
 from fuentes.sodimac.listado import obtener_ofertas_sodimac  # noqa: E402
 from fuentes.sparta.listado import obtener_ofertas_sparta  # noqa: E402
@@ -570,38 +567,6 @@ async def _correr() -> None:
                     )
             return candidatas
 
-        # Cupones de combustible (Copec/Shell, ver scraper/cupones_writer.py) — NO son tiendas
-        # producto-shaped (sin precio/descuento_pct), así que no pasan por _RUNNERS ni
-        # config.TIENDAS/canal_para_oferta: su canal es fijo ("ofertas_combustible"), sin tramos.
-        # Solo corre si ese canal ya está configurado (ver config.CANAL_TELEGRAM_USERNAME) — el
-        # usuario todavía no crea ese canal de Telegram, así que por ahora este bloque es un no-op.
-        async def _procesar_cupones_combustible(sesion) -> list[dict]:
-            fuentes_cupones = (
-                ("shell", "Shell", obtener_cupones_shell),
-                ("copec", "Copec", obtener_cupones_copec),
-            )
-            candidatas: list[dict] = []
-            for tienda_id, comercio, obtener in fuentes_cupones:
-                try:
-                    detectados, ok = await asyncio.wait_for(
-                        obtener(sesion), timeout=config.TIMEOUT_TIENDA_SEGUNDOS
-                    )
-                except asyncio.TimeoutError:
-                    log.error(
-                        "%s (cupones): no terminó en %ss, se descarta esta corrida (posible cuelgue)",
-                        comercio, config.TIMEOUT_TIENDA_SEGUNDOS,
-                    )
-                    detectados, ok = [], 0
-                if ok:
-                    candidatas += await cupones_writer.procesar_cupones(pool, detectados, tienda_id, comercio)
-                fallos = monitoreo_tiendas.registrar_resultado(repo_dir, tienda_id, bool(ok))
-                if fallos and fallos % config.FALLOS_TIENDA_ANTES_DE_ALERTA == 0:
-                    await telegram_publisher.avisar_admin(
-                        f"{comercio} (cupones combustible) lleva {fallos} corridas fallando seguidas. "
-                        f"Requiere revisión manual."
-                    )
-            return candidatas
-
         todas_candidatas: list[dict] = []
         async with FetcherSession(impersonate=config.USER_AGENT_IMPERSONATE, timeout=config.HTTP_TIMEOUT_SEGUNDOS) as sesion:
             resultados = await asyncio.gather(*(
@@ -609,9 +574,6 @@ async def _correr() -> None:
             ))
             for candidatas in resultados:
                 todas_candidatas.extend(candidatas)
-
-            if config.CANAL_TELEGRAM_USERNAME.get("ofertas_combustible"):
-                todas_candidatas += await _procesar_cupones_combustible(sesion)
 
         # descuentos así de extremos suelen ser errores de precio del comercio — se postean primero
         # (no se mezclan con el resto) y se avisa aparte al admin para que pueda verificar/comprar

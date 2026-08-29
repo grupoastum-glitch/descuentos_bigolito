@@ -21,6 +21,7 @@ from telegram.constants import ParseMode
 from telegram.error import RetryAfter, TelegramError, TimedOut
 
 import config
+import dias_semana
 
 log = logging.getLogger("scraper.telegram_publisher")
 
@@ -144,33 +145,64 @@ def _formatear_caption(oferta: dict) -> str:
     return "\n".join(lineas)[:1024]
 
 
-def _formatear_caption_cupon(cupon: dict) -> str:
-    """Caption paralelo a _formatear_caption, para cupones de combustible (ver
-    scraper/cupones_writer.py) — sin precio/descuento_pct/historial, esos campos no existen para
-    un cupón. La condición real (monto, código, cómo activarlo) casi siempre vive en el texto
-    libre de `descripcion` (las fuentes no separan esos datos en campos propios, ver
-    scraper/fuentes/copec|shell/listado.py), así que el caption se arma mostrando
-    título+descripción tal cual en vez de intentar reconstruir una línea de "monto" aparte."""
+_EXTRACTO_DIGEST_MAX = 90  # largo de la línea de descripción por cupón en el digest — con ~28
+# cupones totales el mensaje no se acerca al límite real (4096, texto plano), pero mantiene el
+# mensaje escaneable (ver formatear_digest_cupones)
+
+_ETIQUETA_COMERCIO_DIGEST = {"Shell": "🐚 Shell", "Copec": "⛽ Copec"}
+
+
+def _extracto_digest(texto: str | None, maximo: int = _EXTRACTO_DIGEST_MAX) -> str:
+    if not texto:
+        return ""
+    limpio = html.escape(texto.strip())
+    return limpio if len(limpio) <= maximo else limpio[: maximo - 1].rstrip() + "…"
+
+
+def _linea_cupon_digest(cupon: dict, con_extracto: bool) -> str:
     titulo = html.escape(cupon["titulo"])
-    url = html.escape(cupon["url"])
-    hashtag_comercio = cupon["comercio"].replace(" ", "")
-
-    lineas = [f"⛽ #{hashtag_comercio} 🎟️ Cupón de descuento"]
     if cupon.get("socio") and cupon["socio"] not in ("General", cupon["comercio"]):
-        lineas.append(f"🏦 {html.escape(cupon['socio'])}")
-    lineas += ["", titulo]
+        linea = f"🏦 <b>{html.escape(cupon['socio'])}</b> — {titulo}"
+    else:
+        linea = f"🏦 <b>{titulo}</b>"
+    if con_extracto:
+        extracto = _extracto_digest(cupon.get("descripcion"))
+        if extracto:
+            linea += f"\n{extracto}"
+    return linea
 
-    if cupon.get("descripcion"):
-        lineas += ["", html.escape(cupon["descripcion"])]
-    if cupon.get("dia_semana"):
-        lineas.append(f"📅 {html.escape(cupon['dia_semana'])}")
-    if cupon.get("vigencia_hasta"):
-        lineas.append(f"⏳ Vigente hasta {html.escape(cupon['vigencia_hasta'])}")
-    if cupon.get("codigo"):
-        lineas.append(f"🔑 Código: {html.escape(cupon['codigo'])}")
 
-    lineas += ["", f'🔗 <a href="{url}">MÁS DETALLES</a> 👈 👀']
-    return "\n".join(lineas)[:1024]
+def formatear_digest_cupones(grupos: dict | None) -> str | None:
+    """Arma el mensaje de texto plano del digest diario de cupones de combustible (ver
+    scraper/cupones_writer.py::construir_grupos_digest) — `grupos["hoy"]` es un dict
+    {comercio: [cupones vigentes hoy]}, `grupos["todos"]` es la lista combinada (ambos comercios)
+    de los que aplican todos los días. None si no hay nada que mostrar.
+
+    Backstop de largo en 3 niveles (límite real de un mensaje de texto: 4096, no 1024 como una
+    foto): con extracto de descripción por cupón -> si se pasa de ~3800 caracteres, solo títulos
+    -> backstop final [:4096]."""
+    if not grupos or not (any(grupos["hoy"].values()) or grupos["todos"]):
+        return None
+
+    hoy_capitalizado = dias_semana.nombre_dia_chile().capitalize()
+    fecha = datetime.now(config.TZ_CHILE).strftime("%d/%m")
+
+    def _armar(con_extracto: bool) -> str:
+        lineas = [f"⛽🎟️ Cupones combustible de hoy — {hoy_capitalizado} {fecha}"]
+        for comercio, cupones in grupos["hoy"].items():
+            if not cupones:
+                continue
+            lineas += ["", f"<b>{_ETIQUETA_COMERCIO_DIGEST.get(comercio, comercio)}</b>"]
+            lineas += [_linea_cupon_digest(c, con_extracto) for c in cupones]
+        if grupos["todos"]:
+            lineas += ["", "<b>🔁 Todos los días</b>"]
+            lineas += [_linea_cupon_digest(c, con_extracto) for c in grupos["todos"]]
+        return "\n".join(lineas)
+
+    texto = _armar(con_extracto=True)
+    if len(texto) > 3800:
+        texto = _armar(con_extracto=False)
+    return texto[:4096]
 
 
 async def avisar_admin(mensaje: str) -> bool:
@@ -204,7 +236,7 @@ async def _enviar_con_reintento(bot: Bot, chat_id: str, oferta: dict) -> bool:
     Para los comercios de _COMERCIOS_CON_CDN_BLOQUEADO, la imagen se descarga acá mismo y se
     sube como bytes en vez de pasarle la URL a Telegram (ver _descargar_imagen) — al resto de
     las tiendas no se les toca el comportamiento, siguen mandando la URL directa como siempre."""
-    texto = _formatear_caption_cupon(oferta) if oferta.get("tipo") == "cupon" else _formatear_caption(oferta)
+    texto = oferta["texto"] if oferta.get("tipo") == "digest_cupones" else _formatear_caption(oferta)
     for intento in range(config.TELEGRAM_REINTENTOS_MAX + 1):
         try:
             imagen = oferta.get("imagen")
