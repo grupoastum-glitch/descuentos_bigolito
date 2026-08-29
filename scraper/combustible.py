@@ -3,7 +3,10 @@ scraper general (main.py) y su publicador (publicar.py):
 
 1. Scrapea Copec y Shell (~28 cupones totales) y actualiza el snapshot en Postgres (tabla
    `cupones_combustible`, ver db.py/cupones_writer.py).
-2. Arma el digest diario (los cupones vigentes HOY, ver cupones_writer.construir_grupos_digest) y
+2. Sintetiza con Claude Haiku (ver cupones_sintesis.py) una frase corta de "cuánto se ahorra + cómo
+   activarlo" para los cupones NUEVOS (sin `resumen_digest` todavía) — una sola llamada batch, y
+   queda cacheado por cupón, no se repite cada corrida.
+3. Arma el digest diario (los cupones vigentes HOY, ver cupones_writer.construir_grupos_digest) y
    lo manda directo a Telegram — sin pasar por `cola_publicacion`: esa cola existe para desacoplar
    el scrapeo lento de miles de ofertas del envío con throttle; acá no hay volumen que la
    justifique (1 mensaje al día).
@@ -36,6 +39,7 @@ from scrapling.fetchers import FetcherSession
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
 import config  # noqa: E402 (después de load_dotenv a propósito, config lee os.environ)
+import cupones_sintesis  # noqa: E402
 import cupones_writer  # noqa: E402
 import db  # noqa: E402
 import dias_semana  # noqa: E402
@@ -66,6 +70,17 @@ async def _scrapear_y_actualizar_snapshot(pool) -> None:
                 log.error("%s: no se pudo leer ninguna promo, se deja el snapshot como estaba", comercio)
 
 
+async def _sintetizar_resumenes_pendientes(pool) -> None:
+    """Cupones activos sin `resumen_digest` (nuevos de hoy, o pendientes de una corrida anterior
+    donde falló el LLM) — se sintetizan en un solo batch. Ver cupones_sintesis.py: si falla o no
+    hay API key, no pasa nada acá, el formateador del digest cae a un resumen por defecto."""
+    pendientes = await db.cargar_cupones_sin_resumen(pool)
+    if not pendientes:
+        return
+    resumenes = await asyncio.to_thread(cupones_sintesis.sintetizar_resumenes, pendientes)
+    await db.guardar_resumenes(pool, resumenes)
+
+
 async def _correr() -> None:
     if not config.DATABASE_URL:
         raise SystemExit("Falta DATABASE_URL en el entorno")
@@ -81,6 +96,7 @@ async def _correr() -> None:
             return
 
         await _scrapear_y_actualizar_snapshot(pool)
+        await _sintetizar_resumenes_pendientes(pool)
 
         hoy = datetime.now(config.TZ_CHILE).date()
         if config.FORZAR_DIGEST_COMBUSTIBLE:

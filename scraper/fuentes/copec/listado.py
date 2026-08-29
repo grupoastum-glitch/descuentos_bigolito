@@ -40,6 +40,23 @@ patrón de EXCLUSIÓN explícito (`_EXCLUSION_RE`, mismo criterio pragmático qu
 ampliar si aparecen más falsos positivos, no hay una señal estructurada limpia para esto.
 
 No se detectó paginación — la página trae todas las promos vigentes en una sola carga.
+
+Segunda pasada — página de detalle: la card de listado NO trae "cómo se activa" (código vs.
+tarjeta) ni la vigencia (fecha de inicio/término) — esos campos solo existen en la página de
+detalle de cada promo (`a.btn-tertiary[href]`, ya capturado como `url_fuente` pero nunca
+visitado). Confirmado con `curl` contra `/personas/promociones/caja-los-andes`: el bloque
+`.products-detail__product` trae, en HTML simple sin JS:
+- Un `<p>Uso exclusivo con</p>` seguido de un `span.tag-dia` con el método ("Código", "Tarjeta").
+- Un `<p>Vigencia</p>` seguido de un `<span>` con el texto "Válido desde DD/MM/YY - hasta el
+  DD/MM/YY" — se parsea con `_VIGENCIA_RE` a fechas ISO (asumiendo siglo 20XX, único formato visto).
+
+Confirmado además (probando la URL de listado con `?fields.Fecha+de+inicio[lte]=<hoy>&fields.Fecha
++de+término[gt]=<hoy>`, el mismo filtro que usa el propio sitio) que `/personas/promociones` SIN
+filtrar ya excluye promos vencidas — por eso la vigencia acá es solo para MOSTRAR en el digest
+("vence DD/MM"), no hace falta filtrar por ella.
+
+Esto agrega un request extra por promo que pasó el filtro de combustible (~16-18 por corrida) —
+aceptable para un cron que corre una vez por hora.
 """
 from __future__ import annotations
 
@@ -51,6 +68,9 @@ log = logging.getLogger("scraper.fuentes.copec")
 _URL_PROMOCIONES = "https://ww2.copec.cl/personas/promociones"
 _PALABRAS_COMBUSTIBLE_RE = re.compile(r"litro|combustible", re.I)
 _EXCLUSION_RE = re.compile(r"tarjeta de cr[eé]dito.*con nosotros|rent a car|arrendar", re.I)
+_VIGENCIA_RE = re.compile(
+    r"desde\s+(\d{1,2})/(\d{1,2})/(\d{2})\s*-\s*hasta\s+el\s+(\d{1,2})/(\d{1,2})/(\d{2})", re.I
+)
 
 
 def _item_desde_card(card) -> dict | None:
@@ -101,6 +121,46 @@ def _item_desde_card(card) -> dict | None:
     }
 
 
+def _siglo_completo(anio_corto: str) -> int:
+    return 2000 + int(anio_corto)
+
+
+async def _enriquecer_con_detalle(sesion, item: dict) -> None:
+    """Visita la página de detalle de la promo (`item["url_fuente"]`) y completa `como_activar`
+    y `vigencia_desde`/`vigencia_hasta` in-place. Cualquier falla acá se ignora en silencio — el
+    item ya es válido con los datos de la card, esto es solo un enriquecimiento best-effort."""
+    try:
+        respuesta = await sesion.get(item["url_fuente"])
+    except Exception:
+        log.warning("Copec: falló el fetch del detalle de %r", item["titulo"])
+        return
+    if respuesta.status != 200:
+        log.warning("Copec: HTTP %s en el detalle de %r", respuesta.status, item["titulo"])
+        return
+
+    detalle = respuesta.css(".products-detail__product")
+    if not detalle:
+        return
+    nodo = detalle[0]
+
+    # Estructura real (inspeccionada con curl): el primer span.tag-dia es el día (ya lo tenemos de
+    # la card); el segundo, si existe, es el método bajo "Uso exclusivo con" (Código/Tarjeta).
+    metodos = nodo.css("span.tag-dia")
+    if len(metodos) >= 2:
+        metodo = metodos[1].get_all_text(strip=True)
+        if metodo:
+            item["como_activar"] = metodo
+
+    for span in nodo.css("span"):
+        texto = span.get_all_text(strip=True)
+        coincidencia = _VIGENCIA_RE.search(texto)
+        if coincidencia:
+            d1, m1, a1, d2, m2, a2 = coincidencia.groups()
+            item["vigencia_desde"] = f"{_siglo_completo(a1)}-{int(m1):02d}-{int(d1):02d}"
+            item["vigencia_hasta"] = f"{_siglo_completo(a2)}-{int(m2):02d}-{int(d2):02d}"
+            break
+
+
 async def obtener_cupones_copec(sesion) -> tuple[list[dict], int]:
     """Devuelve (cupones detectados, 1 si se pudo leer la página / 0 si falló) — mismo contrato
     (items, contador_ok) que el resto de fuentes.<tienda>.listado."""
@@ -122,6 +182,9 @@ async def obtener_cupones_copec(sesion) -> tuple[list[dict], int]:
     if not items:
         log.error("Copec: no se detectó ningún cupón de combustible en %s", _URL_PROMOCIONES)
         return [], 0
+
+    for item in items:
+        await _enriquecer_con_detalle(sesion, item)
 
     log.info("Copec: %s cupones de combustible detectados", len(items))
     return items, 1

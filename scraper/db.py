@@ -111,6 +111,14 @@ ALTER TABLE cupones_combustible DROP COLUMN IF EXISTS hash_contenido;
 ALTER TABLE cupones_combustible DROP COLUMN IF EXISTS hash_publicado;
 ALTER TABLE cupones_combustible DROP COLUMN IF EXISTS ultima_publicacion;
 
+-- Frase corta (armada por scraper/cupones_sintesis.py con Claude Haiku) que resume "cuánto se
+-- ahorra + cómo activarlo" para el digest — ver telegram_publisher.formatear_digest_cupones. Se
+-- llena UNA vez por cupón (queda cacheada acá) y nunca la pisa upsert_cupones, así un cupón que ya
+-- tiene resumen no lo pierde aunque cambie su descripción cruda en una corrida futura. NULL =
+-- todavía no se sintetizó (cupón nuevo, o la llamada al LLM falló) — el digest cae a un resumen
+-- simple por defecto en ese caso.
+ALTER TABLE cupones_combustible ADD COLUMN IF NOT EXISTS resumen_digest TEXT;
+
 CREATE INDEX IF NOT EXISTS ix_cupones_tienda_activo
     ON cupones_combustible (tienda_id, activo);
 
@@ -436,6 +444,30 @@ async def upsert_cupones(pool: asyncpg.Pool, registros: list[dict]) -> None:
                    imagen = EXCLUDED.imagen,
                    ultima_actualizacion = EXCLUDED.ultima_actualizacion, activo = EXCLUDED.activo""",
             filas,
+        )
+
+
+async def cargar_cupones_sin_resumen(pool: asyncpg.Pool) -> list[dict]:
+    """Cupones activos que todavía no tienen `resumen_digest` — los nuevos de hoy, o los que
+    quedaron pendientes porque la llamada al LLM falló en una corrida anterior (ver
+    scraper/cupones_sintesis.py). Se les vuelve a intentar sintetizar cada corrida hasta que
+    quede guardado un resumen."""
+    async with pool.acquire() as con:
+        filas = await con.fetch(
+            "SELECT * FROM cupones_combustible WHERE activo AND resumen_digest IS NULL",
+        )
+    return [dict(fila) for fila in filas]
+
+
+async def guardar_resumenes(pool: asyncpg.Pool, resumenes: dict[str, str]) -> None:
+    """UPDATE puntual de `resumen_digest` para los ids dados — no toca el resto de la fila, así
+    que no compite con el upsert del snapshot (ver upsert_cupones)."""
+    if not resumenes:
+        return
+    async with pool.acquire() as con:
+        await con.executemany(
+            "UPDATE cupones_combustible SET resumen_digest = $2 WHERE id = $1",
+            list(resumenes.items()),
         )
 
 

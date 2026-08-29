@@ -215,6 +215,9 @@ def canal_para_oferta(tienda_id: str, pct: int) -> str | None:
 # --- Descubrimiento de URLs (fallback cuando el listado conocido deja de funcionar) ---
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL_DESCUBRIMIENTO = "claude-haiku-4-5-20251001"
+# Síntesis del digest de cupones combustible (ver scraper/cupones_sintesis.py) — mismo modelo,
+# constante separada por si en el futuro conviene ajustarlas por separado.
+ANTHROPIC_MODEL_COMBUSTIBLE = "claude-haiku-4-5-20251001"
 RUTA_RUTAS_DESCUBIERTAS = "scraper/rutas_descubiertas.json"
 RUTA_DESCUBRIMIENTO_FALLIDOS = "scraper/descubrimiento_fallidos.json"
 # cada cuántos fallos consecutivos de descubrimiento se re-avisa por Telegram (para no
