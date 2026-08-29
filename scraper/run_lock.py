@@ -31,6 +31,11 @@ _LOCK_KEY = (
     else zlib.crc32(config.SCRAPER_NOMBRE.encode()) & 0x7FFFFFFF
 )
 
+# Clave distinta a _LOCK_KEY: publicar.py es un proceso separado del scraper (otro ciclo de
+# vida, no coordinado por SCRAPER_NOMBRE) — si compartiera la clave, competiría por el mismo
+# lock que las corridas del scraper en vez de coordinar contra otras instancias de sí mismo.
+_LOCK_KEY_PUBLICAR = 727280
+
 
 async def adquirir_lock(pool: asyncpg.Pool) -> asyncpg.pool.PoolConnectionProxy | None:
     """Devuelve la conexión que sostiene el lock (hay que mantenerla viva hasta liberar_lock),
@@ -45,6 +50,22 @@ async def adquirir_lock(pool: asyncpg.Pool) -> asyncpg.pool.PoolConnectionProxy 
     return con
 
 
+async def adquirir_lock_publicador(pool: asyncpg.Pool) -> asyncpg.pool.PoolConnectionProxy:
+    """Bloqueante, a diferencia de adquirir_lock: publicar.py es un proceso 24/7 de instancia
+    única, no una corrida puntual que deba abortar si ya hay otra activa. Si el lock está
+    tomado (ej. un deploy de Railway colgado dejó al contenedor viejo corriendo mientras el
+    nuevo arranca), simplemente espera a que se libere — el contenedor viejo lo libera solo al
+    morir, sin importar si fue un apagado prolijo o un kill de golpe (ver docstring arriba)."""
+    con = await pool.acquire()
+    await con.fetchval("SELECT pg_advisory_lock($1)", _LOCK_KEY_PUBLICAR)
+    return con
+
+
 async def liberar_lock(con: asyncpg.pool.PoolConnectionProxy, pool: asyncpg.Pool) -> None:
     await con.fetchval("SELECT pg_advisory_unlock($1)", _LOCK_KEY)
+    await pool.release(con)
+
+
+async def liberar_lock_publicador(con: asyncpg.pool.PoolConnectionProxy, pool: asyncpg.Pool) -> None:
+    await con.fetchval("SELECT pg_advisory_unlock($1)", _LOCK_KEY_PUBLICAR)
     await pool.release(con)

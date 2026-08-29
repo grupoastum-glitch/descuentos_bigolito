@@ -6,8 +6,14 @@ en Postgres (tabla `cola_publicacion`, ver db.encolar_publicaciones). Este proce
 que lee esa cola y la manda a Telegram — así, aunque el volumen de una corrida sea grande y
 tarde horas en drenarse (limitado por config.TELEGRAM_DELAY_SEGUNDOS por canal, no por
 nosotros), eso nunca bloquea el advisory lock que necesita la próxima corrida horaria del
-scraper para arrancar (ver run_lock.py, que este proceso no usa — es el único de su tipo
-corriendo siempre, no hay corridas superpuestas que coordinar).
+scraper para arrancar (ver run_lock.py).
+
+Está pensado como instancia única, pero a diferencia del scraper eso no está garantizado por
+naturaleza (no hay cron de por medio) — un deploy de Railway que se cuelga puede dejar al
+contenedor viejo corriendo mientras el nuevo arranca, y sin coordinación ambos drenarían la
+misma cola a la vez (mismo _cola_id publicado dos veces, el bug reportado 2026-08-28). Por eso
+usa run_lock.adquirir_lock_publicador (bloqueante, clave propia _LOCK_KEY_PUBLICAR) en vez de
+arrancar sin lock.
 """
 from __future__ import annotations
 
@@ -23,6 +29,7 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 import config  # noqa: E402 (después de load_dotenv a propósito, config lee os.environ)
 import db  # noqa: E402
 import ofertas_writer  # noqa: E402
+import run_lock  # noqa: E402
 import telegram_publisher  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -63,6 +70,7 @@ async def _correr() -> None:
         raise SystemExit("Falta TELEGRAM_BOT_TOKEN en el entorno")
 
     pool = await db.conectar()
+    con_lock = await run_lock.adquirir_lock_publicador(pool)
     log.info("Publicador arrancado, drenando cola_publicacion cada %ss cuando está vacía.", POLL_SEGUNDOS)
 
     ultima_limpieza = datetime.now(timezone.utc)
@@ -99,6 +107,7 @@ async def _correr() -> None:
             if not hubo_trabajo:
                 await asyncio.sleep(POLL_SEGUNDOS)
     finally:
+        await run_lock.liberar_lock_publicador(con_lock, pool)
         await db.cerrar()
 
 
